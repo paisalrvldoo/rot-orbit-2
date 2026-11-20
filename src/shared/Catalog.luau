@@ -40,6 +40,21 @@ Catalog.mutations = {
 	{ name = "Eclipse", factor = 5, color = Color3.fromRGB(231, 103, 255) },
 }
 
+Catalog.upgrades = { 240, 620, 1550, 3800, 8000 }
+Catalog.contracts = {
+	{ title = "Cargo Shift", goal = 3, reward = 180, detail = "Dock 3 brainrots" },
+	{ title = "Credit Run", goal = 250, reward = 260, detail = "Collect 250 banked credits" },
+	{ title = "Rare Delivery", goal = 1, reward = 410, detail = "Dock a Rare or better" },
+}
+
+function Catalog.rebirthCost(rebirths)
+	return 6500 + 3500 * rebirths
+end
+
+function Catalog.discoveryKey(cargo)
+	return (cargo.id - 1) * #Catalog.mutations + cargo.mutation
+end
+
 function Catalog.name(cargo)
 	local prefix = Catalog.mutations[cargo.mutation].name
 	return (prefix == "" and "" or prefix .. " ") .. Catalog.entries[cargo.id].name

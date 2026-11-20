@@ -2,8 +2,11 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
-local action = ReplicatedStorage:WaitForChild("Orbit"):WaitForChild("Action")
+local orbit = ReplicatedStorage:WaitForChild("Orbit")
+local Catalog = require(orbit:WaitForChild("Catalog"))
+local action = orbit:WaitForChild("Action")
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "OrbitHUD"
@@ -105,9 +108,11 @@ player:GetAttributeChangedSignal("Carry"):Connect(function()
 end)
 
 local function renderIncident()
-	incident.Text = workspace:GetAttribute("Raid") or ""
+	local raid = workspace:GetAttribute("Raid") or ""
+	incident.Text = raid ~= "" and raid or (workspace:GetAttribute("Event") or ""):upper()
 end
 workspace:GetAttributeChangedSignal("Raid"):Connect(renderIncident)
+workspace:GetAttributeChangedSignal("Event"):Connect(renderIncident)
 renderIncident()
 task.spawn(function()
 	while gui.Parent do
@@ -132,7 +137,9 @@ local function render()
 	elseif stage <= 3 then
 		guide.Text = "3  /  Collect banked credits at Bay " .. bay
 	else
-		guide.Text = "BAY " .. bay .. "   /   Collect credits and buy rarer cargo"
+		local remainder = math.ceil((player:GetAttribute("LockedUntil") or 0) - workspace:GetServerTimeNow())
+		guide.Text = remainder > 0 and ("BAY " .. bay .. "  /  SEALED " .. remainder .. "s")
+			or ("BAY " .. bay .. "   /   Collect credits and buy rarer cargo")
 	end
 end
 
@@ -146,7 +153,197 @@ player:GetAttributeChangedSignal("OrbitMessageId"):Connect(function()
 		{ TextTransparency = 1, TextStrokeTransparency = 1 })
 	fade:Play()
 end)
-for _, key in ipairs({ "Cash", "Unclaimed", "Income", "Carry", "Bay", "Guide" }) do
+for _, key in ipairs({ "Cash", "Unclaimed", "Income", "Carry", "Bay", "Guide", "LockedUntil" }) do
 	player:GetAttributeChangedSignal(key):Connect(render)
 end
 render()
+
+local function button(parent, words, size, pos)
+	local control = panel("TextButton", parent, size, pos, Vector2.zero)
+	control.Font = Enum.Font.GothamBold
+	control.TextColor3 = cyan
+	control.TextSize = 14
+	control.Text = words
+	return control
+end
+
+local menuButton = button(gui, "LOGBOOK", UDim2.fromOffset(106, 44), UDim2.new(1, -116, 0, 76))
+local menu = panel("Frame", gui, UDim2.new(.94, 0, .84, 0), UDim2.fromScale(.5, .5), Vector2.new(.5, .5))
+menu.Visible = false
+menu.ZIndex = 2
+local maxMenu = Instance.new("UISizeConstraint")
+maxMenu.MaxSize = Vector2.new(540, 520)
+maxMenu.Parent = menu
+local title = label(menu, UDim2.new(1, -77, 0, 40), UDim2.fromOffset(15, 7), white, 21, Enum.TextXAlignment.Left)
+title.Text = "STATION LOGBOOK"
+title.ZIndex = 3
+local close = button(menu, "×", UDim2.fromOffset(44, 44), UDim2.new(1, -51, 0, 6))
+close.ZIndex = 3
+local tabs = { "Index", "Upgrades", "Contracts" }
+local active = "Index"
+local content = Instance.new("ScrollingFrame")
+content.Size = UDim2.new(1, -24, 1, -108)
+content.Position = UDim2.fromOffset(12, 101)
+content.AutomaticCanvasSize = Enum.AutomaticSize.Y
+content.CanvasSize = UDim2.fromOffset(0, 0)
+content.ScrollingDirection = Enum.ScrollingDirection.Y
+content.ScrollBarThickness = 4
+content.ScrollBarImageColor3 = cyan
+content.BackgroundTransparency = 1
+content.BorderSizePixel = 0
+content.ZIndex = 3
+content.Parent = menu
+local list = Instance.new("UIListLayout")
+list.Padding = UDim.new(0, 6)
+list.Parent = content
+
+local tabButtons = {}
+local confirmation
+local function line(words, color, height)
+	local row = label(content, UDim2.new(1, -9, 0, height or 30), UDim2.fromOffset(0, 0),
+		color, 14, Enum.TextXAlignment.Left)
+	row.Text = words
+	row.TextWrapped = true
+	row.TextTruncate = Enum.TextTruncate.None
+	row.ZIndex = 4
+	return row
+end
+
+local function menuRow(words)
+	local row = button(content, words, UDim2.new(1, -9, 0, 46), UDim2.fromOffset(0, 0))
+	row.ZIndex = 4
+	return row
+end
+
+local refreshMenu
+local function confirmButton(words, confirm, request)
+	local row = menuRow(confirmation == request and confirm or words)
+	row.Activated:Connect(function()
+		if confirmation == request then
+			confirmation = nil
+			action:FireServer(request)
+			menu.Visible = false
+		else
+			confirmation = request
+			refreshMenu()
+		end
+	end)
+end
+
+refreshMenu = function()
+	if not menu.Visible then return end
+	for _, item in ipairs(content:GetChildren()) do
+		if item ~= list then item:Destroy() end
+	end
+	for tab, control in pairs(tabButtons) do
+		control.TextColor3 = tab == active and gold or cyan
+	end
+	if active == "Index" then
+		local seen = {}
+		for key in (player:GetAttribute("Index") or ""):gmatch("%d+") do seen[tonumber(key)] = true end
+		local count, mutations = 0, 0
+		for _, entry in ipairs(Catalog.entries) do
+			local discovered = false
+			for mutation = 1, #Catalog.mutations do
+				if seen[Catalog.discoveryKey({ id = entry.id, mutation = mutation })] then
+					discovered = true
+					if mutation > 1 then mutations += 1 end
+				end
+			end
+			if discovered then count += 1 end
+		end
+		line(count .. " / " .. #Catalog.entries .. " discovered   •   " .. mutations .. " mutations", gold)
+		for _, entry in ipairs(Catalog.entries) do
+			local versions = {}
+			for mutation, variant in ipairs(Catalog.mutations) do
+				if seen[Catalog.discoveryKey({ id = entry.id, mutation = mutation })] then
+					table.insert(versions, mutation == 1 and "Standard" or variant.name)
+				end
+			end
+			local tier = Catalog.tiers[entry.tier]
+			local words = #versions == 0 and "???   /   " .. tier.name
+				or (entry.name .. "   /   " .. table.concat(versions, ", "))
+			line(words, tier.color)
+		end
+	elseif active == "Upgrades" then
+		local level = player:GetAttribute("Upgrade") or 0
+		local rebirths = player:GetAttribute("Rebirths") or 0
+		local cost = Catalog.upgrades[level + 1]
+		line("Dock amplifier  /  Level " .. level .. " of " .. #Catalog.upgrades, gold)
+		line("Each level adds 25% base dock income.", white)
+		if cost then
+			menuRow("UPGRADE   $" .. cost).Activated:Connect(function()
+				action:FireServer("Upgrade")
+				menu.Visible = false
+			end)
+		end
+		line("Rebirths  /  " .. rebirths, gold)
+		line("Reset cargo, credits and upgrades for a permanent 25% base income boost. Keep all discoveries.", white, 46)
+		confirmButton("REBIRTH   $" .. Catalog.rebirthCost(rebirths), "CONFIRM REBIRTH", "Rebirth")
+		line("Free a slot by scrapping your lowest earner for half its market price.", white, 43)
+		confirmButton("RECYCLE WEAKEST CARGO", "CONFIRM RECYCLE", "Recycle")
+	else
+		local contract = Catalog.contracts[player:GetAttribute("Contract") or 1]
+		local progress = player:GetAttribute("ContractProgress") or 0
+		line(contract.title .. "   /   $" .. contract.reward .. " reward", gold)
+		line(contract.detail .. "   •   " .. progress .. " / " .. contract.goal, white)
+		if progress >= contract.goal then
+			menuRow("CLAIM REWARD").Activated:Connect(function() action:FireServer("Contract") end)
+		end
+	end
+end
+
+local function openMenu(tab)
+	active = tab
+	confirmation = nil
+	menu.Visible = true
+	content.CanvasPosition = Vector2.zero
+	refreshMenu()
+end
+
+for index, tab in ipairs(tabs) do
+	local tabButton = button(menu, tab, UDim2.new(1 / 3, -10, 0, 44), UDim2.new((index - 1) / 3, 7, 0, 52))
+	tabButton.ZIndex = 3
+	tabButtons[tab] = tabButton
+	tabButton.Activated:Connect(function() openMenu(tab) end)
+end
+menuButton.Activated:Connect(function()
+	if menu.Visible then menu.Visible = false else openMenu("Index") end
+end)
+close.Activated:Connect(function() menu.Visible = false end)
+menu:GetPropertyChangedSignal("Visible"):Connect(function()
+	wallet.Visible = not menu.Visible
+	guideBox.Visible = not menu.Visible
+	notice.Visible = not menu.Visible
+	incident.Visible = not menu.Visible
+	zap.Visible = not menu.Visible
+	menuButton.Visible = not menu.Visible
+end)
+for _, key in ipairs({ "Index", "Upgrade", "Rebirths", "Contract", "ContractProgress" }) do
+	player:GetAttributeChangedSignal(key):Connect(refreshMenu)
+end
+
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	if input.KeyCode == Enum.KeyCode.I then
+		if menu.Visible then menu.Visible = false else openMenu("Index") end
+	end
+	if not RunService:IsStudio() or not workspace.CurrentCamera then return end
+	local camera = workspace.CurrentCamera
+	if input.KeyCode == Enum.KeyCode.One then
+		menu.Visible = false
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = CFrame.lookAt(Vector3.new(1, 59, 77), Vector3.new(0, 1, -8))
+		wallet.Visible, guideBox.Visible, notice.Visible, incident.Visible, zap.Visible, menuButton.Visible = false, false, false, false, false, false
+	elseif input.KeyCode == Enum.KeyCode.Two or input.KeyCode == Enum.KeyCode.Four then
+		openMenu(input.KeyCode == Enum.KeyCode.Two and "Index" or "Upgrades")
+	elseif input.KeyCode == Enum.KeyCode.Three then
+		menu.Visible = false
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = CFrame.lookAt(Vector3.new(27, 14, 17), Vector3.new(44, 4, 0))
+	elseif input.KeyCode == Enum.KeyCode.Zero then
+		menu.Visible = false
+		camera.CameraType = Enum.CameraType.Custom
+		wallet.Visible, guideBox.Visible, notice.Visible, incident.Visible, zap.Visible, menuButton.Visible = true, true, true, true, true, true
+	end
+end)

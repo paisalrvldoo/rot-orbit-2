@@ -40,6 +40,8 @@ local function sync(player, state)
 	for _, slot in ipairs(state.bay.slots) do
 		if slot.cargo then rate += Catalog.rate(slot.cargo) end
 	end
+	rate = math.floor(rate * (1 + .25 * state.level + .25 * state.rebirths)
+		* (workspace:GetAttribute("Event") == "Solar Flare" and 2 or 1))
 	player:SetAttribute("Cash", state.cash)
 	player:SetAttribute("Unclaimed", state.bank)
 	player:SetAttribute("Income", rate)
@@ -47,6 +49,10 @@ local function sync(player, state)
 	player:SetAttribute("Bay", state.bay.number)
 	player:SetAttribute("Guide", state.guide)
 	player:SetAttribute("LockedUntil", state.lockedUntil)
+	player:SetAttribute("Upgrade", state.level)
+	player:SetAttribute("Rebirths", state.rebirths)
+	player:SetAttribute("Contract", state.contract)
+	player:SetAttribute("ContractProgress", state.progress)
 	return rate
 end
 
@@ -142,8 +148,12 @@ local function assign(player)
 	end
 	if not bay then return false end
 	bay.owner = player
-	local state = { bay = bay, cash = 90, bank = 0, guide = 1, lockedUntil = 0, lockReady = 0, zapReady = 0 }
+	local state = {
+		bay = bay, cash = 90, bank = 0, guide = 1, lockedUntil = 0, lockReady = 0, zapReady = 0,
+		level = 0, rebirths = 0, contract = 1, progress = 0, index = {},
+	}
 	profiles[player] = state
+	player:SetAttribute("Index", "")
 	bay.header:SetAttribute("Owner", player.UserId)
 	for _, slot in ipairs(bay.slots) do slot.prompt:SetAttribute("Owner", player.UserId) end
 	bay.collectPrompt:SetAttribute("Owner", player.UserId)
@@ -167,6 +177,7 @@ for i, bay in ipairs(bays) do
 		local value = state.bank
 		state.cash += value
 		state.bank = 0
+		if state.contract == 2 then state.progress = math.min(250, state.progress + value) end
 		state.guide = math.max(state.guide, 4)
 		sync(player, state)
 		message(player, "+ " .. value .. " credits collected")
@@ -218,6 +229,15 @@ for i, bay in ipairs(bays) do
 			clearSource(cargo)
 			state.carry = nil
 			dockCargo(slot, cargo)
+			local key = Catalog.discoveryKey(cargo)
+			if not state.index[key] then
+				state.index[key] = true
+				local keys = {}
+				for found in pairs(state.index) do table.insert(keys, found) end
+				player:SetAttribute("Index", table.concat(keys, ","))
+			end
+			if state.contract == 1 then state.progress = math.min(3, state.progress + 1) end
+			if state.contract == 3 and Catalog.entries[cargo.id].tier >= 3 then state.progress = 1 end
 			state.guide = math.max(state.guide, 3)
 			sync(player, state)
 			message(player, Catalog.name(cargo) .. " docked  /  +" .. Catalog.rate(cargo) .. "/s")
@@ -301,6 +321,7 @@ end
 local function stock(offer, first)
 	local cargo = roll(offer.index, first)
 	offer.cargo = cargo
+	offer.refresh = os.clock() + rng:NextNumber(49, 68)
 	placeOffer(offer)
 	local cost = Catalog.price(cargo)
 	local rate = Catalog.rate(cargo)
@@ -341,8 +362,9 @@ local function finishRaid(recovered)
 		returnCargo(active.cargo)
 	else
 		local source = clearSource(active.cargo)
-		active.cargo.model:Destroy()
-		if source and source.bay.owner then message(source.bay.owner, "The gremlin escaped with your cargo.") end
+		-- The escaping gremlin drops the loot at the portal for a final recovery window.
+		dropPurchased(active.cargo, World.portal)
+		if source and source.bay.owner then message(source.bay.owner, "Your cargo fell at the rift. Recover it before it expires.") end
 	end
 end
 
@@ -395,10 +417,62 @@ local function moveRaid(delta, now)
 end
 
 action.OnServerEvent:Connect(function(player, request)
-	if request ~= "Zap" then return end
 	local state, root = profiles[player], rootOf(player)
 	if not state or not root then return end
 	local now = workspace:GetServerTimeNow()
+	if request ~= "Zap" then
+		if now < (state.menuReady or 0) then return end
+		state.menuReady = now + .3
+		if request == "Upgrade" then
+			local price = Catalog.upgrades[state.level + 1]
+			if not price then message(player, "Income upgrade is maxed.") return end
+			if state.cash < price then message(player, "Need $" .. price .. " to upgrade.") return end
+			state.cash -= price
+			state.level += 1
+			message(player, "Dock income upgraded. +25% base income.")
+		elseif request == "Rebirth" then
+			local price = Catalog.rebirthCost(state.rebirths)
+			if state.cash < price then message(player, "Need $" .. price .. " to rebirth.") return end
+			if state.carry then message(player, "Dock your carried cargo before rebirthing.") return end
+			for _, slot in ipairs(state.bay.slots) do
+				if slot.reserved then message(player, "Recover your missing cargo before rebirthing.") return end
+			end
+			for _, slot in ipairs(state.bay.slots) do
+				if slot.cargo then slot.cargo.model:Destroy() end
+				slot.cargo = nil
+				updateSlot(slot)
+			end
+			state.cash, state.bank, state.level, state.guide = 90, 0, 0, 1
+			state.rebirths += 1
+			message(player, "Rebirth complete. Permanent +25% base income.")
+		elseif request == "Contract" then
+			local contract = Catalog.contracts[state.contract]
+			if state.progress < contract.goal then message(player, "Contract is still in progress.") return end
+			state.cash += contract.reward
+			state.contract = state.contract % #Catalog.contracts + 1
+			state.progress = 0
+			message(player, "Contract complete  /  +$" .. contract.reward)
+		elseif request == "Recycle" then
+			local weakest
+			for _, slot in ipairs(state.bay.slots) do
+				if slot.cargo and (not weakest or Catalog.rate(slot.cargo) < Catalog.rate(weakest.cargo)) then
+					weakest = slot
+				end
+			end
+			if not weakest then message(player, "There is no docked cargo to recycle.") return end
+			local cargo = weakest.cargo
+			local salvage = math.floor(Catalog.price(cargo) / 2)
+			weakest.cargo = nil
+			cargo.model:Destroy()
+			updateSlot(weakest)
+			state.cash += salvage
+			message(player, Catalog.name(cargo) .. " recycled  /  +$" .. salvage)
+		else
+			return
+		end
+		sync(player, state)
+		return
+	end
 	if now < state.zapReady then return end
 	state.zapReady = now + 5
 	player:SetAttribute("ZapReady", state.zapReady)
@@ -441,7 +515,22 @@ task.spawn(function()
 		last = now
 		for _, offer in ipairs(market) do
 			offer.angle = (offer.angle + delta * .12) % (math.pi * 2)
-			if offer.cargo then placeOffer(offer) end
+			if offer.cargo then
+				if now >= offer.refresh then
+					local anchor = offer.cargo.model.PrimaryPart
+					local busy = false
+					for player in pairs(profiles) do
+						if near(player, anchor.Position, 11) then busy = true break end
+					end
+					if busy then
+						offer.refresh += 3
+					else
+						offer.cargo.model:Destroy()
+						stock(offer, false)
+					end
+				end
+				placeOffer(offer)
+			end
 		end
 		for player, state in pairs(profiles) do
 			local root = state.carry and rootOf(player)
@@ -456,14 +545,42 @@ task.spawn(function()
 		task.wait(1)
 		local now = workspace:GetServerTimeNow()
 		for player, state in pairs(profiles) do
-			state.bank += sync(player, state)
+			local rate = sync(player, state)
+			state.bank += rate
 			player:SetAttribute("Unclaimed", state.bank)
+			if rate == 0 and state.bank + state.cash < 50 and not state.carry then
+				state.cash = 75
+				message(player, "Station relief grant  /  Wallet topped up to $75.")
+			end
 			if state.lockedUntil > 0 and now >= state.lockedUntil then
 				state.lockedUntil = 0
 				state.bay.lockLabel.Text = "BAY OPEN"
 				state.bay.lockLabel.TextColor3 = World.cyan
 			end
 		end
+	end
+end)
+
+task.spawn(function()
+	local solar = true
+	while true do
+		task.wait(72)
+		while not next(profiles) do task.wait(5) end
+		if solar then
+			workspace:SetAttribute("Event", "Solar Flare")
+			announce("Solar flare  /  Double dock income for 24 seconds.")
+			World.flash(Vector3.new(0, 1, 0), World.gold, 15)
+		else
+			workspace:SetAttribute("Event", "Meteor Drop")
+			announce("Meteor drop  /  Recover Ion cargo at the central reactor.")
+			local cargo = { id = rng:NextInteger(8, 21), mutation = 2 }
+			cargo.model = World.figure(cargo, World.root)
+			World.flash(Vector3.new(0, 2, 0), World.pink, 12)
+			dropPurchased(cargo, Vector3.new(0, 0, 0))
+		end
+		solar = not solar
+		task.wait(24)
+		workspace:SetAttribute("Event", "")
 	end
 end)
 
