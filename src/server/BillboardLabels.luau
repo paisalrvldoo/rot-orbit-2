@@ -103,7 +103,7 @@ end
 local function styleCard(card, rank, color)
 	local panel = card.Readout
 	local style = styles[rank]
-	local accent = style and style[2] or color
+	local accent = color
 	panel.BackgroundColor3 = style and style[1] or ink
 	panel.RarityOutline.Color = accent
 	panel.RarityOutline.Thickness = rank == "SECRET" and 2 or 1
