@@ -54,9 +54,9 @@ local function near(player, position, distance)
 	return root and (root.Position - position).Magnitude <= distance
 end
 
-local function sync(player, state)
+local function sync(player, state, rate)
 	state.guide = GuideService.Stage(state)
-	local rate = EconomyService.Rate(state, workspace:GetAttribute("IncomeMultiplier") or 1)
+	rate = rate or EconomyService.Rate(state, workspace:GetAttribute("IncomeMultiplier") or 1)
 	player:SetAttribute("Cash", state.cash)
 	player:SetAttribute("Unclaimed", state.bank)
 	player:SetAttribute("Income", rate)
@@ -84,7 +84,6 @@ local function sync(player, state)
 		slot.prompt:SetAttribute("Crew", state.crew or 0)
 		slot.prompt:SetAttribute("LockedUntil", state.lockedUntil)
 	end
-	return rate
 end
 
 local function setCarry(player, state, cargo)
@@ -181,7 +180,10 @@ local weather = MeteorSolarEvents.new({
 local function assign(player)
 	local bay
 	for _, candidate in ipairs(bays) do
-		if not candidate.owner then bay = candidate break end
+		if not candidate.owner then
+			bay = candidate
+			break
+		end
 	end
 	if not bay then return false end
 	rivals:Clear(bay)
@@ -293,10 +295,16 @@ for i, bay in ipairs(bays) do
 		if World.root:GetAttribute("ScreenshotFrozen") then return end
 		local state = profiles[player]
 		if not state or state.loading or state.closing or state.bay ~= bay or not near(player, bay.bank.Position, 10) then return end
-		if state.bank <= 0 then message(player, "Dock a brainrot to start earning.") return end
-		local value = state.bank
-		state.cash += value
-		state.bank = 0
+		if state.bank <= 0 then
+			message(player, "Dock a brainrot to start earning.")
+			return
+		end
+		local value = EconomyService.Credit(state, state.bank)
+		if value == 0 then
+			message(player, "Wallet full. Spend credits before collecting.")
+			return
+		end
+		state.bank -= value
 		ContractService.Activity(state, "Collect", nil, value)
 		state.guide = math.max(state.guide, 4)
 		sync(player, state)
@@ -477,9 +485,18 @@ local function stock(offer, first, expiresAt)
 		if World.root:GetAttribute("ScreenshotFrozen") then return end
 		local state = profiles[player]
 		if not state or state.loading or state.closing or not near(player, anchor.Position, 13) then return end
-		if state.carry then message(player, "Dock your current cargo first.") return end
-		if not EconomyService.FreeSlot(state) then message(player, "Bay full. Recycle your weakest cargo in Upgrades.") return end
-		if state.cash < cost then message(player, "Need $" .. cost .. " for this brainrot.") return end
+		if state.carry then
+			message(player, "Dock your current cargo first.")
+			return
+		end
+		if not EconomyService.FreeSlot(state) then
+			message(player, "Bay full. Recycle your weakest cargo in Upgrades.")
+			return
+		end
+		if state.cash < cost then
+			message(player, "Need $" .. cost .. " for this brainrot.")
+			return
+		end
 		if not conveyor:Claim(offer) then return end
 		state.cash -= cost
 		ContractService.Activity(state, "Buy", cargo)
@@ -488,7 +505,6 @@ local function stock(offer, first, expiresAt)
 		cargo.model:SetAttribute("OfferExpiresAt", nil)
 		state.guide = math.max(state.guide, 2)
 		setCarry(player, state, cargo)
-		sync(player, state)
 		message(player, "Bought " .. Catalog.name(cargo) .. ". Head to Bay " .. state.bay.number .. ".")
 	end)
 end
@@ -543,13 +559,20 @@ action.OnServerEvent:Connect(function(player, request, value)
 					weakest = slot
 				end
 			end
-			if not weakest then message(player, "There is no docked cargo to recycle.") return end
+			if not weakest then
+				message(player, "There is no docked cargo to recycle.")
+				return
+			end
 			local cargo = weakest.cargo
 			local salvage = math.floor(Catalog.price(cargo) / 2)
+			if state.cash + salvage > Catalog.maxCash then
+				message(player, "Make room in your wallet before recycling.")
+				return
+			end
 			weakest.cargo = nil
 			cargo.model:Destroy()
 			updateSlot(weakest)
-			state.cash += salvage
+			EconomyService.Credit(state, salvage)
 			message(player, Catalog.name(cargo) .. " recycled  /  +$" .. salvage)
 		else
 			return
@@ -607,13 +630,13 @@ task.spawn(function()
 				state.bay.lockLabel.TextColor3 = World.cyan
 				crews:Refresh()
 			end
-			local rate = sync(player, state)
-			state.bank = math.min(1e12, state.bank + rate)
-			player:SetAttribute("Unclaimed", state.bank)
+			local rate = EconomyService.Rate(state, workspace:GetAttribute("IncomeMultiplier") or 1)
+			state.bank = math.min(Catalog.maxCash, state.bank + rate)
 			if rate == 0 and state.bank + state.cash < 50 and not state.carry then
 				state.cash = 75
 				message(player, "Station relief grant  /  Wallet topped up to $75.")
 			end
+			sync(player, state, rate)
 		end
 	end
 end)
