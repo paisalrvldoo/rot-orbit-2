@@ -1,5 +1,6 @@
 local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
+local ShelterDomes = require(script.Parent.ShelterDomes)
 local StationEffects = {}
 
 local amber = Color3.fromRGB(255, 192, 96)
@@ -25,6 +26,17 @@ function StationEffects.bind(root, part, reactor, grade, shelters)
 		OutdoorAmbient = Color3.fromRGB(94, 61, 44),
 		ExposureCompensation = calm.ExposureCompensation + .23,
 	}
+	local function attribute(name)
+		local value = root:GetAttribute(name)
+		if value == nil then value = workspace:GetAttribute(name) end
+		return value
+	end
+	local function meteorActive()
+		local enabled = attribute("MeteorShowerActive")
+		if enabled ~= nil then return enabled == true end
+		local event = attribute("Event")
+		return event == "Meteor Shower" or event == "Meteor Drop"
+	end
 
 	local function meteor(impact, duration, offset)
 		if active >= maxMeteors or not root.Parent or root:GetAttribute("ScreenshotFrozen") then return end
@@ -84,7 +96,9 @@ function StationEffects.bind(root, part, reactor, grade, shelters)
 
 	local function solarFlare(enabled)
 		enabled = enabled == true
-		if solarEnabled == enabled or not root.Parent then return end
+		if not root.Parent then return end
+		ShelterDomes.update(shelters, meteorActive(), enabled)
+		if solarEnabled == enabled then return end
 		solarEnabled = enabled
 		if lightTween then lightTween:Cancel() end
 		if gradeTween then gradeTween:Cancel() end
@@ -101,39 +115,38 @@ function StationEffects.bind(root, part, reactor, grade, shelters)
 
 	local function refresh()
 		if not root.Parent then return end
-		local event = workspace:GetAttribute("Event")
-		local solarActive = workspace:GetAttribute("SolarFlareActive")
+		local event = attribute("Event")
+		local solarActive = attribute("SolarFlareActive")
 		if solarActive == nil then solarActive = event == "Solar Flare" end
 		solarFlare(solarActive)
-		local shower = workspace:GetAttribute("MeteorShowerActive")
-		if shower == nil then shower = event == "Meteor Shower" or event == "Meteor Drop" end
-		for _, shelter in ipairs(shelters or {}) do
-			local color = shower and amber or solarActive and Color3.fromRGB(255, 219, 145) or shelter.Color
-			shelter.Part.Color = color
-			shelter.Part.Transparency = shower and .72 or .88
-			shelter.Boundary.Color = color
-			shelter.Label.MaxDistance = shower and 50 or 26
-			shelter.Label.TextLabel.TextColor3 = color
-		end
 		if current == event then return end
 		current = event
 		-- Authoritative showers call World.meteor for each warned impact. Only the
 		-- older Meteor Drop event needs a decorative fallback, so impacts never double.
 		if event ~= "Meteor Drop" then return end
 		meteor(Vector3.new(0, .44, 0), 1.2)
-		local deadline = workspace:GetAttribute("EventEndsAt")
+		local deadline = attribute("EventEndsAt")
 		for i, target in ipairs({ Vector3.new(-24, .15, 15), Vector3.new(23, .15, -18), Vector3.new(4, .15, 27) }) do
 			task.delay(i * 1.4, function()
-				if current == "Meteor Drop" and workspace:GetAttribute("EventEndsAt") == deadline then
+				if current == "Meteor Drop" and attribute("EventEndsAt") == deadline then
 					meteor(target, 1.55, Vector3.new(-41 + i * 7, 79, 25))
 				end
 			end)
 		end
 	end
-	for _, attribute in ipairs({ "Event", "SolarFlareActive", "MeteorShowerActive" }) do
-		table.insert(connections, workspace:GetAttributeChangedSignal(attribute):Connect(function()
-			task.defer(refresh)
-		end))
+	local refreshQueued = false
+	local function queueRefresh()
+		if refreshQueued then return end
+		refreshQueued = true
+		task.defer(function()
+			refreshQueued = false
+			refresh()
+		end)
+	end
+	for _, source in ipairs({ root, workspace }) do
+		for _, name in ipairs({ "Event", "SolarFlareActive", "MeteorShowerActive" }) do
+			table.insert(connections, source:GetAttributeChangedSignal(name):Connect(queueRefresh))
+		end
 	end
 	local function clearMeteors()
 		local pending = {}

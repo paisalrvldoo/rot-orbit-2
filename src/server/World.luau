@@ -188,12 +188,17 @@ function World.build()
 		end
 		local header = sign(root, pivot * CFrame.new(0, 5.2, 9), 27, 2.1, "BAY " .. i .. "  /  VACANT", accent)
 		local bay = { header = header, slots = {}, spawn = pivot * CFrame.new(0, 3.5, -12), center = center }
-		local ramp = World.part(root, "Bay Access Ramp", Vector3.new(13, .42, 10),
-			pivot * CFrame.new(0, .16, -15) * CFrame.Angles(-.04, 0, 0), dark, Enum.Material.Metal, true)
+		-- Place the top face between the concourse and the exact front deck edge.
+		local rise, run, thickness = .19 + .45 / 2, 10, .42
+		local rampLength = math.sqrt(run * run + rise * rise)
+		local rampSurface = pivot * CFrame.new(0, rise / 2, -9.5 - run / 2)
+			* CFrame.Angles(-math.atan2(rise, run), 0, 0)
+		local ramp = World.part(root, "Bay Access Ramp", Vector3.new(13, thickness, rampLength + .2),
+			rampSurface * CFrame.new(0, -thickness / 2, 0), dark, Enum.Material.Metal, true)
 		ramp.TopSurface = Enum.SurfaceType.Smooth
 		for _, x in ipairs({ -6.2, 6.2 }) do
 			World.part(root, "Ramp Light", Vector3.new(.12, .08, 9.8),
-				pivot * CFrame.new(x, .4, -15) * CFrame.Angles(-.04, 0, 0), accent, neon)
+				rampSurface * CFrame.new(x, .045, 0), accent, neon)
 		end
 		for slot = 1, 6 do
 			local x = ((slot - 1) % 3 - 1) * 7.7
@@ -210,12 +215,26 @@ function World.build()
 		bays[i] = bay
 	end
 	for _, x in ipairs({ -43, 43 }) do
-		local center = Vector3.new(x, 6.2, 0)
+		local center = Vector3.new(x, 5.9, 0)
 		local portalColor = x < 0 and cyan or pink
 		cylinder(root, "Portal Landing", Vector3.new(x, .18, 0), 14, .36, dark, Enum.Material.Metal, true)
 		cylinder(root, "Portal Landing Trim", Vector3.new(x, .4, 0), 13.2, .08, portalColor, neon)
-		ring(root, center, Vector3.zAxis, Vector3.yAxis, 6, 24, .27, portalColor, neon)
-		ring(root, center, Vector3.zAxis, Vector3.yAxis, 6.45, 24, .15, x < 0 and gold or ice, neon)
+		-- Side piers and upper half-arcs leave a ten-stud-wide walk-through lane.
+		for _, side in ipairs({ -1, 1 }) do
+			World.part(root, "Portal Pier", Vector3.new(.7, 5.5, .7),
+				CFrame.new(x, 3.15, side * 5.55), portalColor, Enum.Material.Metal)
+		end
+		ring(root, center, Vector3.zAxis, Vector3.yAxis, 5.55, 12, .27, portalColor, neon,
+			false, math.pi)
+		ring(root, center, Vector3.zAxis, Vector3.yAxis, 5.85, 12, .15, x < 0 and gold or ice, neon,
+			false, math.pi)
+		-- Floor guides continue across the landing and through the arch to the bays.
+		for _, z in ipairs({ -2.4, 2.4 }) do
+			for _, span in ipairs({ { -8.15, 3.1, .08 }, { 0, 13.2, .58 }, { 8.15, 3.1, .08 } }) do
+				World.part(root, "Portal Approach Guide", Vector3.new(span[2], .06, .14),
+					CFrame.new(x + span[1], span[3], z), portalColor, neon)
+			end
+		end
 	end
 	World.portal = Vector3.new(43, .42, 0)
 	local gate = World.part(root, "Rift Beacon", Vector3.new(2, .35, 2), CFrame.new(World.portal), pink, neon)
