@@ -311,17 +311,7 @@ refreshMenu = function()
 			for mutation = 2, #Catalog.mutations do seen[Catalog.discoveryKey({ id = 44, mutation = mutation })] = true end
 			line("STUDIO CATALOG PREVIEW", gold)
 		end
-		local count, mutations = 0, 0
-		for _, entry in ipairs(Catalog.entries) do
-			local discovered = false
-			for mutation = 1, #Catalog.mutations do
-				if seen[Catalog.discoveryKey({ id = entry.id, mutation = mutation })] then
-					discovered = true
-					if mutation > 1 then mutations += 1 end
-				end
-			end
-			if discovered then count += 1 end
-		end
+		local count, mutations = Catalog.discoveryCount(seen)
 		line(count .. " / " .. #Catalog.entries .. " discovered   •   " .. mutations .. " mutations", gold)
 		local milestone = Catalog.indexMilestones[(player:GetAttribute("IndexMilestone") or 0) + 1]
 		if milestone then line("Next index bonus: " .. milestone.goal .. " names → $" .. number(milestone.reward), white) end
@@ -330,7 +320,7 @@ refreshMenu = function()
 			local variant = Catalog.mutations[mutation]
 			table.insert(variants, variant.name .. " ×" .. variant.factor)
 		end
-		line("6 mutations: " .. table.concat(variants, "  •  "), cyan, 64)
+		line(Catalog.mutationCount .. " mutations: " .. table.concat(variants, "  •  "), cyan, 64)
 		for _, entry in ipairs(Catalog.entries) do
 			local versions = {}
 			for mutation, variant in ipairs(Catalog.mutations) do
@@ -347,7 +337,7 @@ refreshMenu = function()
 		local level = player:GetAttribute("Upgrade") or 0
 		local rebirths = player:GetAttribute("Rebirths") or 0
 		local cost = Catalog.upgrades[level + 1]
-		line("Progress: " .. (player:GetAttribute("SaveStatus") or "Loading") .. "  •  autosave every 50s", cyan)
+		line("Progress: " .. (player:GetAttribute("SaveStatus") or "Loading") .. "  •  autosave every " .. Catalog.autosaveSeconds .. "s", cyan)
 		line("Dock amplifier  /  Level " .. level .. " of " .. #Catalog.upgrades, gold)
 		line("Each level adds 25% base dock income.", white)
 		if cost then

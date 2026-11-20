@@ -1,4 +1,6 @@
 local Catalog = {}
+Catalog.maxCash = 1e12
+Catalog.autosaveSeconds = 50
 
 Catalog.tiers = {
 	{ name = "Common", color = Color3.fromRGB(94, 240, 167), price = 50, rate = 4 },
@@ -47,6 +49,11 @@ Catalog.mutations = {
 	{ name = "Zero-G", factor = 10, chance = .003, color = Color3.fromRGB(181, 213, 255) },
 	{ name = "Supernova", factor = 15, chance = .001, color = Color3.fromRGB(255, 141, 82) },
 }
+-- Standard cargo occupies slot 1; the six mutations retain stable discovery IDs.
+Catalog.mutationCount = #Catalog.mutations - 1
+Catalog.marketThemes = { 1, 2, 1, 3, 1, 4, 2, 1, 5, 2, 3, 6 }
+Catalog.cosmicChance = .12
+Catalog.zap = { range = 22, cooldown = 3, stun = 1.2, stealCooldown = 6 }
 
 function Catalog.rollMutation(random)
 	local chance, cumulative = random:NextNumber(), 0
@@ -98,6 +105,21 @@ function Catalog.discoveryKey(cargo)
 	return (cargo.id - 1) * #Catalog.mutations + cargo.mutation
 end
 
+function Catalog.discoveryCount(index)
+	local namesFound, variantsFound = 0, 0
+	for _, entry in ipairs(Catalog.entries) do
+		local found = false
+		for mutation = 1, #Catalog.mutations do
+			if index[Catalog.discoveryKey({ id = entry.id, mutation = mutation })] then
+				found = true
+				if mutation > 1 then variantsFound += 1 end
+			end
+		end
+		if found then namesFound += 1 end
+	end
+	return namesFound, variantsFound
+end
+
 function Catalog.name(cargo)
 	local prefix = Catalog.mutations[cargo.mutation].name
 	return (prefix == "" and "" or prefix .. " ") .. Catalog.entries[cargo.id].name
@@ -109,6 +131,14 @@ end
 
 function Catalog.rate(cargo)
 	return Catalog.entries[cargo.id].rate * Catalog.mutations[cargo.mutation].factor
+end
+
+local uniqueNames = {}
+assert(#Catalog.entries == 45 and #Catalog.tiers == 7 and Catalog.mutationCount == 6, "Catalog size changed; review save IDs and index rewards")
+for _, entry in ipairs(Catalog.entries) do
+	assert(not uniqueNames[entry.name], "Duplicate brainrot name: " .. entry.name)
+	assert(Catalog.tiers[entry.tier] and entry.price > 0 and entry.rate > 0, "Invalid cargo economy")
+	uniqueNames[entry.name] = true
 end
 
 return Catalog

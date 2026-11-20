@@ -432,17 +432,17 @@ end)
 
 task.spawn(function()
 	while not serverClosing do
-		task.wait(50)
+		task.wait(Catalog.autosaveSeconds)
 		for player, state in pairs(profiles) do
 			if not state.loading and not state.closing then task.spawn(function() data:Save(player, false) end) end
 		end
 	end
 end)
 
-local themes = { 1, 2, 1, 3, 1, 4, 2, 1, 5, 2, 3, 6 }
+local themes = Catalog.marketThemes
 local function roll(index, first)
 	local tier = themes[index]
-	if index == #themes and rng:NextNumber() < .12 then tier = 7 end
+	if index == #themes and rng:NextNumber() < Catalog.cosmicChance then tier = #Catalog.tiers end
 	local choices = Catalog.byTier[tier]
 	local id = first and index == 1 and 1 or choices[rng:NextInteger(1, #choices)]
 	local mutation = not first and index ~= 1 and Catalog.rollMutation(rng) or 1

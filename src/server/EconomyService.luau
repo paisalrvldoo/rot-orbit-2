@@ -1,6 +1,12 @@
 local Catalog = require(game:GetService("ReplicatedStorage"):WaitForChild("Orbit"):WaitForChild("Catalog"))
 local EconomyService = {}
 
+function EconomyService.Credit(state, amount)
+	local before = state.cash
+	state.cash = math.clamp(before + amount, 0, Catalog.maxCash)
+	return state.cash - before
+end
+
 function EconomyService.Rate(state, solar)
 	local rate = 0
 	for _, slot in ipairs(state.bay.slots) do
@@ -26,13 +32,7 @@ function EconomyService.Discover(state, cargo)
 	local key = Catalog.discoveryKey(cargo)
 	if state.index[key] then return false, 0 end
 	state.index[key] = true
-	local found, count = {}, 0
-	for _, entry in ipairs(Catalog.entries) do
-		for mutation = 1, #Catalog.mutations do
-			if state.index[Catalog.discoveryKey({ id = entry.id, mutation = mutation })] then found[entry.id] = true; break end
-		end
-	end
-	for _ in pairs(found) do count += 1 end
+	local count = Catalog.discoveryCount(state.index)
 	local reward = 0
 	for index, milestone in ipairs(Catalog.indexMilestones) do
 		if count >= milestone.goal and index > (state.milestone or 0) then
@@ -40,8 +40,7 @@ function EconomyService.Discover(state, cargo)
 			state.milestone = index
 		end
 	end
-	state.cash += reward
-	return true, reward
+	return true, EconomyService.Credit(state, reward)
 end
 
 function EconomyService.Upgrade(state, kind)
