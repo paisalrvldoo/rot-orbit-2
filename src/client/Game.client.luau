@@ -19,6 +19,14 @@ local cyan = Color3.fromRGB(94, 237, 255)
 local gold = Color3.fromRGB(255, 224, 102)
 local white = Color3.fromRGB(234, 247, 255)
 
+local function number(value)
+	value = value or 0
+	for _, unit in ipairs({ { 1e9, "B" }, { 1e6, "M" }, { 1e3, "K" } }) do
+		if value >= unit[1] then return string.format("%.1f%s", value / unit[1], unit[2]) end
+	end
+	return tostring(math.floor(value))
+end
+
 local function panel(class, parent, size, pos, anchor)
 	local item = Instance.new(class)
 	item.Size = size
@@ -54,21 +62,23 @@ local function label(parent, size, pos, color, textSize, align)
 	return item
 end
 
-local wallet = panel("Frame", gui, UDim2.fromOffset(168, 62), UDim2.new(1, -10, 0, 9), Vector2.new(1, 0))
+local wallet = panel("Frame", gui, UDim2.fromOffset(280, 68), UDim2.new(.5, 0, 0, 10), Vector2.new(.5, 0))
 local cash = label(wallet, UDim2.new(1, -20, 0, 32), UDim2.fromOffset(10, 2), gold, 24, Enum.TextXAlignment.Left)
-local bank = label(wallet, UDim2.new(1, -20, 0, 24), UDim2.fromOffset(10, 31), cyan, 13, Enum.TextXAlignment.Left)
-local guideBox = panel("Frame", gui, UDim2.new(.86, 0, 0, 42), UDim2.new(.5, 0, 0, 84), Vector2.new(.5, 0))
+local bank = label(wallet, UDim2.new(1, -20, 0, 28), UDim2.fromOffset(10, 34), cyan, 14, Enum.TextXAlignment.Left)
+local guideBox = panel("Frame", gui, UDim2.new(1, -24, 0, 56), UDim2.new(.5, 0, 0, 86), Vector2.new(.5, 0))
 local maxGuide = Instance.new("UISizeConstraint")
-maxGuide.MaxSize = Vector2.new(480, 42)
+maxGuide.MaxSize = Vector2.new(500, 56)
 maxGuide.Parent = guideBox
 local guide = label(guideBox, UDim2.new(1, -18, 1, 0), UDim2.fromOffset(9, 0), white, 14)
 guide.TextWrapped = true
 guide.TextTruncate = Enum.TextTruncate.None
-local notice = label(gui, UDim2.new(.88, 0, 0, 32), UDim2.new(.5, 0, 0, 132), gold, 14)
+local notice = label(gui, UDim2.new(1, -32, 0, 44), UDim2.new(.5, 0, 0, 146), gold, 15)
 notice.AnchorPoint = Vector2.new(.5, 0)
+notice.TextWrapped = true
+notice.TextTruncate = Enum.TextTruncate.None
 notice.Text = ""
 notice.TextStrokeTransparency = .25
-local incident = label(gui, UDim2.fromOffset(202, 24), UDim2.new(.5, 0, 0, 167), gold, 13)
+local incident = label(gui, UDim2.new(1, -24, 0, 32), UDim2.new(.5, 0, 0, 192), gold, 14)
 incident.AnchorPoint = Vector2.new(.5, 0)
 local zap = panel("TextButton", gui, UDim2.fromOffset(100, 48), UDim2.new(1, -10, .63, 0), Vector2.new(1, .5))
 zap.Font = Enum.Font.GothamBold
@@ -126,8 +136,8 @@ local function render()
 	local bay = player:GetAttribute("Bay")
 	local stage = player:GetAttribute("Guide") or 0
 	local carried = player:GetAttribute("Carry") or ""
-	cash.Text = "$" .. (player:GetAttribute("Cash") or 0)
-	bank.Text = "$" .. (player:GetAttribute("Unclaimed") or 0) .. " banked   •   +" .. (player:GetAttribute("Income") or 0) .. "/s"
+	cash.Text = "$" .. number(player:GetAttribute("Cash"))
+	bank.Text = "$" .. number(player:GetAttribute("Unclaimed")) .. " banked   •   +" .. number(player:GetAttribute("Income")) .. "/s"
 	if stage == 0 then
 		guide.Text = "Waiting for a free docking bay"
 	elseif carried ~= "" then
@@ -167,7 +177,8 @@ local function button(parent, words, size, pos)
 	return control
 end
 
-local menuButton = button(gui, "LOGBOOK", UDim2.fromOffset(106, 44), UDim2.new(1, -116, 0, 76))
+local menuButton = button(gui, "LOGBOOK  [I]", UDim2.fromOffset(150, 48), UDim2.new(.5, 0, 1, -64))
+menuButton.AnchorPoint = Vector2.new(.5, 0)
 local menu = panel("Frame", gui, UDim2.new(.94, 0, .84, 0), UDim2.fromScale(.5, .5), Vector2.new(.5, .5))
 menu.Visible = false
 menu.ZIndex = 2
@@ -201,10 +212,14 @@ local tabButtons = {}
 local confirmation
 local function line(words, color, height)
 	local row = label(content, UDim2.new(1, -9, 0, height or 30), UDim2.fromOffset(0, 0),
-		color, 14, Enum.TextXAlignment.Left)
+		color, 15, Enum.TextXAlignment.Left)
 	row.Text = words
 	row.TextWrapped = true
 	row.TextTruncate = Enum.TextTruncate.None
+	row.AutomaticSize = Enum.AutomaticSize.Y
+	local minimum = Instance.new("UISizeConstraint")
+	minimum.MinSize = Vector2.new(0, height or 44)
+	minimum.Parent = row
 	row.ZIndex = 4
 	return row
 end
@@ -300,6 +315,21 @@ local function openMenu(tab)
 	content.CanvasPosition = Vector2.zero
 	refreshMenu()
 end
+
+local function layout()
+	local size = gui.AbsoluteSize
+	local short = size.Y < 500
+	wallet.Size = UDim2.fromOffset(math.min(280, math.max(180, size.X - 24)), short and 58 or 68)
+	guideBox.Position = UDim2.new(.5, 0, 0, short and 76 or 86)
+	guideBox.Size = UDim2.new(1, -24, 0, short and 40 or 56)
+	notice.Position = UDim2.new(.5, 0, 0, short and 118 or 146)
+	notice.Size = UDim2.new(1, -32, 0, short and 32 or 44)
+	incident.Position = UDim2.new(.5, 0, 0, short and 152 or 192)
+	menu.Size = UDim2.new(1, -24, 1, -24)
+	menuButton.Text = UserInputService.TouchEnabled and "LOGBOOK" or "LOGBOOK  [I]"
+end
+gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(layout)
+layout()
 
 for index, tab in ipairs(tabs) do
 	local tabButton = button(menu, tab, UDim2.new(1 / 3, -10, 0, 44), UDim2.new((index - 1) / 3, 7, 0, 52))
