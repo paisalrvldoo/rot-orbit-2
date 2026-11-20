@@ -1,9 +1,10 @@
+local BillboardLabels = require(script.Parent.BillboardLabels)
 local Pedestals = {}
 local metal = Enum.Material.Metal
 local neon = Enum.Material.Neon
 local slots = setmetatable({}, { __mode = "k" })
 
-function Pedestals.build(parent, frame, index, accent, part, cylinder, billboard)
+function Pedestals.build(parent, frame, index, accent, part, cylinder)
 	local center = frame.Position
 	local dark = Color3.fromRGB(20, 27, 49)
 	local ink = Color3.fromRGB(9, 13, 27)
@@ -14,10 +15,23 @@ function Pedestals.build(parent, frame, index, accent, part, cylinder, billboard
 	pad:SetAttribute("SlotIndex", index)
 	part(parent, "Dock Stripe", Vector3.new(1.35, .06, .17), frame * CFrame.new(0, .81, -1.78),
 		accent, neon)
-	local label = billboard(pad, string.format("%02d  /  EMPTY", index), accent, 94, 16, .86, 17)
-	label.Name = "SlotStatus"
-	label.Parent.Name = "SlotReadout"
-	local slot = { pad = pad, cf = frame * CFrame.new(0, .82, 0), ring = ring, emptyColor = accent }
+	local readout = BillboardLabels.pedestal(pad, index, accent)
+	local foot, tip = Instance.new("Attachment"), Instance.new("Attachment")
+	foot.CFrame = pad.CFrame:ToObjectSpace(frame * CFrame.new(0, .81, 0))
+	tip.CFrame = pad.CFrame:ToObjectSpace(frame * CFrame.new(0, 2.4, 0))
+	foot.Parent, tip.Parent = pad, pad
+	local aura = Instance.new("Beam")
+	aura.Name = "SocketAura"
+	aura.Attachment0, aura.Attachment1 = foot, tip
+	aura.Width0, aura.Width1 = 4.3, .5
+	aura.FaceCamera = true
+	aura.LightEmission = .8
+	aura.Segments = 1
+	aura.Transparency = NumberSequence.new(.9, 1)
+	aura.Enabled = false
+	aura.Parent = pad
+	local slot = { pad = pad, cf = frame * CFrame.new(0, .82, 0), ring = ring, emptyColor = accent,
+		readout = readout, aura = aura }
 	slots[pad] = slot
 	return slot
 end
@@ -25,15 +39,21 @@ end
 function Pedestals.bindPrompt(pad, prompt)
 	local readout = pad:FindFirstChild("SlotReadout")
 	if not readout then return end
-	local index = pad:GetAttribute("SlotIndex")
 	local slot = slots[pad]
 	local function refresh()
+		if not pad.Parent or not prompt.Parent then return end
 		local cargo = slot and slot.cargo
+		local model = cargo and cargo.model
 		if slot then
-			slot.ring.Color = cargo and cargo.model:GetAttribute("SocketColor") or slot.emptyColor
+			if slot.visualCargo and slot.visualCargo ~= model then BillboardLabels.docked(slot.visualCargo, false, pad) end
+			slot.visualCargo = model
+			slot.ring.Color = model and model:GetAttribute("SocketColor") or slot.emptyColor
+			local rank = model and model:GetAttribute("Rarity")
+			slot.aura.Enabled = rank == "LEGENDARY" or rank == "MYTHIC" or rank == "COSMIC" or rank == "SECRET"
+			slot.aura.Color = ColorSequence.new(slot.ring.Color)
+			BillboardLabels.slot(readout, model, prompt.Enabled and "EMPTY" or "RESERVED", slot.emptyColor)
+			if model then BillboardLabels.docked(model, true, pad) end
 		end
-		readout.Enabled = prompt:GetAttribute("Occupied") ~= true
-		readout.SlotStatus.Text = string.format("%02d  /  %s", index, prompt.Enabled and "EMPTY" or "RESERVED")
 	end
 	-- ObjectText also changes when one occupied slot receives a different cargo.
 	prompt:GetAttributeChangedSignal("Occupied"):Connect(function() task.defer(refresh) end)

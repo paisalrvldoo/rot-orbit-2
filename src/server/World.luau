@@ -199,7 +199,7 @@ function World.build()
 			local x = ((slot - 1) % 3 - 1) * 7.7
 			local z = slot <= 3 and -2.5 or 5
 			bay.slots[slot] = Pedestals.build(root, pivot * CFrame.new(x, .415, z), slot, accent,
-				World.part, cylinder, World.billboard)
+				World.part, cylinder)
 		end
 		local bank = World.part(root, "Credit Terminal", Vector3.new(2.6, 2.5, 1.6), pivot * CFrame.new(-8.5, 1.55, -7.7), dark)
 		World.part(root, "Terminal Screen", Vector3.new(2.1, .87, .13), pivot * CFrame.new(-8.5, 2.1, -8.55), accent, neon)
