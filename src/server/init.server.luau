@@ -5,6 +5,7 @@ local Catalog = require(Orbit:WaitForChild("Catalog"))
 local World = require(script:WaitForChild("World"))
 local CrewService = require(script:WaitForChild("CrewService"))
 local DataService = require(script:WaitForChild("DataService"))
+local SkillService = require(script:WaitForChild("SkillService"))
 local data = DataService.new()
 
 local rng = Random.new()
@@ -70,6 +71,7 @@ end
 
 local function setCarry(player, state, cargo)
 	state.carry = cargo
+	SkillService.Update(player, state)
 	if not cargo then
 		sync(player, state)
 		return
@@ -300,8 +302,10 @@ local function join(player)
 		character:PivotTo(state and state.bay.spawn or CFrame.new(0, 4, 12))
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
+			if state then SkillService.Update(player, state) end
 			humanoid.Died:Connect(function()
 				local state = profiles[player]
+				if state then state.sprintUntil = 0 end
 				if state and state.carry then
 					local cargo = state.carry
 					setCarry(player, state, nil)
@@ -505,6 +509,14 @@ action.OnServerEvent:Connect(function(player, request, value)
 	local state, root = profiles[player], rootOf(player)
 	if not state or state.loading or state.closing or not root then return end
 	local now = workspace:GetServerTimeNow()
+	if now < (state.actionReady or 0) then return end
+	state.actionReady = now + .12
+	if request == "Blink" or request == "Sprint" then
+		local success, words = SkillService.Use(player, state, request)
+		if success then World.flash(root.Position, World.cyan, request == "Blink" and 5 or 3)
+		elseif words then message(player, words) end
+		return
+	end
 	if request ~= "Zap" then
 		if now < (state.menuReady or 0) then return end
 		state.menuReady = now + .3
@@ -635,6 +647,7 @@ task.spawn(function()
 		local now = workspace:GetServerTimeNow()
 		for player, state in pairs(profiles) do
 			if state.loading or state.closing then continue end
+			SkillService.Update(player, state)
 			local rate = sync(player, state)
 			state.bank += rate
 			player:SetAttribute("Unclaimed", state.bank)

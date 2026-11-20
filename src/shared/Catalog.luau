@@ -63,6 +63,10 @@ Catalog.crews = {
 	{ name = "Solar Union", color = Color3.fromRGB(255, 224, 102) },
 	{ name = "Void Scouts", color = Color3.fromRGB(231, 103, 255) },
 }
+Catalog.skills = {
+	Blink = { cooldown = 9, distance = 28, carryDistance = 15 },
+	Sprint = { cooldown = 11, duration = 4, speed = 28, carrySpeed = 21 },
+}
 Catalog.contracts = {
 	{ title = "Cargo Shift", goal = 3, reward = 180, detail = "Dock 3 brainrots" },
 	{ title = "Credit Run", goal = 250, reward = 260, detail = "Collect 250 banked credits" },

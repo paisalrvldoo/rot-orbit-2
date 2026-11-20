@@ -80,14 +80,33 @@ notice.Text = ""
 notice.TextStrokeTransparency = .25
 local incident = label(gui, UDim2.new(1, -24, 0, 32), UDim2.new(.5, 0, 0, 192), gold, 14)
 incident.AnchorPoint = Vector2.new(.5, 0)
-local zap = panel("TextButton", gui, UDim2.fromOffset(100, 48), UDim2.new(1, -10, .63, 0), Vector2.new(1, .5))
+local skillBar = Instance.new("Frame")
+skillBar.Name = "Skills"
+skillBar.BackgroundTransparency = 1
+skillBar.Size = UDim2.fromOffset(100, 160)
+skillBar.Position = UDim2.new(1, -10, .57, 0)
+skillBar.AnchorPoint = Vector2.new(1, .5)
+skillBar.Parent = gui
+local zap = panel("TextButton", skillBar, UDim2.fromOffset(100, 48), UDim2.fromOffset(0, 0), Vector2.zero)
 zap.Font = Enum.Font.GothamBold
 zap.TextSize = 16
 zap.TextColor3 = cyan
 zap.Activated:Connect(function() action:FireServer("Zap") end)
+local blink = panel("TextButton", skillBar, UDim2.fromOffset(100, 48), UDim2.fromOffset(0, 56), Vector2.zero)
+local sprint = panel("TextButton", skillBar, UDim2.fromOffset(100, 48), UDim2.fromOffset(0, 112), Vector2.zero)
+for name, control in pairs({ Blink = blink, Sprint = sprint }) do
+	control.Font = Enum.Font.GothamBold
+	control.TextSize = 15
+	control.TextColor3 = cyan
+	control.Activated:Connect(function() action:FireServer(name) end)
+end
 UserInputService.InputBegan:Connect(function(input, processed)
 	if not processed and (input.KeyCode == Enum.KeyCode.Q or input.KeyCode == Enum.KeyCode.ButtonY) then
 		action:FireServer("Zap")
+	elseif not processed and (input.KeyCode == Enum.KeyCode.F or input.KeyCode == Enum.KeyCode.ButtonB) then
+		action:FireServer("Blink")
+	elseif not processed and (input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.ButtonL3) then
+		action:FireServer("Sprint")
 	end
 end)
 
@@ -131,6 +150,12 @@ task.spawn(function()
 	while gui.Parent do
 		local cooldown = math.ceil((player:GetAttribute("ZapReady") or 0) - workspace:GetServerTimeNow())
 		zap.Text = cooldown > 0 and "ZAP  " .. cooldown .. "s" or (UserInputService.TouchEnabled and "ZAP" or "ZAP  [Q]")
+		local now = workspace:GetServerTimeNow()
+		local blinkCooldown = math.max(0, math.ceil((player:GetAttribute("BlinkReady") or 0) - now))
+		local sprintCooldown = math.max(0, math.ceil((player:GetAttribute("SprintReady") or 0) - now))
+		blink.Text = blinkCooldown > 0 and "BLINK " .. blinkCooldown .. "s" or (UserInputService.TouchEnabled and "BLINK" or "BLINK [F]")
+		sprint.Text = now < (player:GetAttribute("SprintUntil") or 0) and "SPRINTING"
+			or (sprintCooldown > 0 and "RUN " .. sprintCooldown .. "s" or (UserInputService.TouchEnabled and "SPRINT" or "RUN [SHIFT]"))
 		task.wait(.2)
 	end
 end)
@@ -345,6 +370,13 @@ local function layout()
 	incident.Position = UDim2.new(.5, 0, 0, short and 152 or 192)
 	menu.Size = UDim2.new(1, -24, 1, -24)
 	menuButton.Text = UserInputService.TouchEnabled and "LOGBOOK" or "LOGBOOK  [I]"
+	local horizontal = short and size.X >= 600
+	skillBar.Size = UDim2.fromOffset(horizontal and 316 or 100, horizontal and 48 or 160)
+	skillBar.Position = horizontal and UDim2.new(.5, 0, 1, -122) or UDim2.new(1, -10, .57, 0)
+	skillBar.AnchorPoint = horizontal and Vector2.new(.5, 0) or Vector2.new(1, .5)
+	for index, control in ipairs({ zap, blink, sprint }) do
+		control.Position = UDim2.fromOffset(horizontal and (index - 1) * 108 or 0, horizontal and 0 or (index - 1) * 56)
+	end
 end
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(layout)
 layout()
@@ -364,7 +396,7 @@ menu:GetPropertyChangedSignal("Visible"):Connect(function()
 	guideBox.Visible = not menu.Visible
 	notice.Visible = not menu.Visible
 	incident.Visible = not menu.Visible
-	zap.Visible = not menu.Visible
+	skillBar.Visible = not menu.Visible
 	menuButton.Visible = not menu.Visible
 end)
 for _, key in ipairs({ "Index", "Upgrade", "Rebirths", "Contract", "ContractProgress", "CrewId", "PersonalScore", "SaveStatus" }) do
@@ -393,7 +425,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		menu.Visible = false
 		camera.CameraType = Enum.CameraType.Scriptable
 		camera.CFrame = CFrame.lookAt(Vector3.new(1, 59, 77), Vector3.new(0, 1, -8))
-		wallet.Visible, guideBox.Visible, notice.Visible, incident.Visible, zap.Visible, menuButton.Visible = false, false, false, false, false, false
+		wallet.Visible, guideBox.Visible, notice.Visible, incident.Visible, skillBar.Visible, menuButton.Visible = false, false, false, false, false, false
 	elseif input.KeyCode == Enum.KeyCode.Two or input.KeyCode == Enum.KeyCode.Four then
 		openMenu(input.KeyCode == Enum.KeyCode.Two and "Index" or "Upgrades")
 	elseif input.KeyCode == Enum.KeyCode.Three then
@@ -403,6 +435,6 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	elseif input.KeyCode == Enum.KeyCode.Zero then
 		menu.Visible = false
 		camera.CameraType = Enum.CameraType.Custom
-		wallet.Visible, guideBox.Visible, notice.Visible, incident.Visible, zap.Visible, menuButton.Visible = true, true, true, true, true, true
+		wallet.Visible, guideBox.Visible, notice.Visible, incident.Visible, skillBar.Visible, menuButton.Visible = true, true, true, true, true, true
 	end
 end)
