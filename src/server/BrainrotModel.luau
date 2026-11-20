@@ -25,6 +25,14 @@ local silhouettes = {
 }
 local fallbackShapes = { "bean", "biscuit", "puff", "loaf", "capsule", "cup", "sub" }
 local fallbackFeatures = { "leaves", "chips", "pleats", "crust", "bumps", "coffee", "fins" }
+local rarityScales = {
+	COMMON = .82, UNCOMMON = .94, RARE = 1.06, EPIC = 1.18,
+	LEGENDARY = 1.3, MYTHIC = 1.43, COSMIC = 1.56, SECRET = 1.8,
+}
+local rarityMaterials = {
+	RARE = Enum.Material.Metal, LEGENDARY = Enum.Material.Metal,
+	MYTHIC = neon, COSMIC = neon, SECRET = Enum.Material.Metal,
+}
 
 -- Base catalog names keep a stable design even if entries are reordered.
 local designs = {
@@ -86,14 +94,19 @@ function BrainrotModel.build(entry, rarity, mutation, name, part)
 	local rank = rarity.name:upper()
 	local accent = mutation.color or rarity.color
 	local body = mutation.color and entry.color:Lerp(accent, .42) or entry.color
-	local scale = rank == "SECRET" and 1.1 or 1
+	local scale = rarityScales[rank] or 1
+	local bodyMaterial = rarityMaterials[rank]
 	local model = Instance.new("Model")
 	model.Name = name
 	model:SetAttribute("BrainrotId", entry.id)
+	model:SetAttribute("BrainrotName", entry.name)
 	model:SetAttribute("Rarity", rank)
+	model:SetAttribute("RarityRank", entry.tier)
 	model:SetAttribute("RarityColor", rarity.color)
 	model:SetAttribute("Mutation", mutation.name)
-	model:SetAttribute("SocketColor", accent)
+	model:SetAttribute("MutationColor", mutation.color)
+	model:SetAttribute("SocketColor", rarity.color)
+	model:SetAttribute("VisualScale", scale)
 	local function piece(id, w, h, d, x, y, z, color, shape, tilt, material)
 		local size = Vector3.new(w, h, d)
 		if shape == tube then size = Vector3.new(h, w, d) end
@@ -106,7 +119,8 @@ function BrainrotModel.build(entry, rarity, mutation, name, part)
 	local function glow(id, w, h, d, x, y, z, color, shape, tilt)
 		return piece(id, w, h, d, x, y, z, color, shape, tilt, neon)
 	end
-	local anchor = glow("Hover Ring", 3.55, .15, 3.55, 0, .16, 0, accent, tube)
+	-- Keep the tier visible even when a mutation recolours the creature.
+	local anchor = glow("Hover Ring", 3.55, .15, 3.55, 0, .16, 0, rarity.color, tube)
 	model.PrimaryPart = anchor
 	anchor.PivotOffset = anchor.CFrame:ToObjectSpace(CFrame.identity)
 	piece("Hover Plate", 3.23, .12, 3.23, 0, .25, 0, ink, tube)
@@ -141,11 +155,11 @@ function BrainrotModel.build(entry, rarity, mutation, name, part)
 	local y = .66 + h / 2
 	local top = y + h / 2
 	if feature == "macaron" then
-		piece("Lower Macaron", w, .7, d, 0, y - .49, 0, body, ball)
+		piece("Lower Macaron", w, .7, d, 0, y - .49, 0, body, ball, nil, bodyMaterial)
 		piece("Macaron Filling", w * .92, .29, d * .94, 0, y, 0, cream, tube)
-		piece("Upper Macaron", w, .7, d, 0, y + .49, 0, body, ball)
+		piece("Upper Macaron", w, .7, d, 0, y + .49, 0, body, ball, nil, bodyMaterial)
 	else
-		piece("Body", w, h, d, 0, y, 0, body, shape, tilt)
+		piece("Body", w, h, d, 0, y, 0, body, shape, tilt, bodyMaterial)
 	end
 	local faceZ = -d / 2 + .045
 	local faceY = y + .13
