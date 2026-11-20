@@ -1,5 +1,7 @@
 local Catalog = require(game:GetService("ReplicatedStorage"):WaitForChild("Orbit"):WaitForChild("Catalog"))
 local Backdrop = require(script.Parent.OrbitBackdrop)
+local BrainrotModel = require(script.Parent.BrainrotModel)
+local Pedestals = require(script.Parent.Pedestals)
 
 local World = {
 	cyan = Color3.fromRGB(42, 236, 255),
@@ -190,12 +192,7 @@ function World.build()
 		for slot = 1, 6 do
 			local x = ((slot - 1) % 3 - 1) * 7.7
 			local z = slot <= 3 and -2.5 or 5
-			local pos = (pivot * CFrame.new(x, .5, z)).Position
-			cylinder(root, "Dock Base", pos, 5.6, .5, ink, Enum.Material.Metal)
-			cylinder(root, "Dock Ring", pos + Vector3.new(0, .29, 0), 5.1, .12, accent, neon)
-			cylinder(root, "Dock Inner Ring", pos + Vector3.new(0, .37, 0), 4.7, .08, ice, neon)
-			local pad = cylinder(root, "Dock " .. slot, pos + Vector3.new(0, .46, 0), 4.35, .22, dark)
-			bay.slots[slot] = { pad = pad, cf = CFrame.lookAt(pad.Position, pad.Position - backward) }
+			bay.slots[slot] = Pedestals.build(root, pivot * CFrame.new(x, .415, z), slot, accent, World.part, cylinder)
 		end
 		local bank = World.part(root, "Credit Terminal", Vector3.new(2.6, 2.5, 1.6), pivot * CFrame.new(-8.5, 1.55, -7.7), dark)
 		World.part(root, "Terminal Screen", Vector3.new(2.1, .87, .13), pivot * CFrame.new(-8.5, 2.1, -8.55), accent, neon)
@@ -229,46 +226,7 @@ function World.figure(cargo, parent)
 	local entry = Catalog.entries[cargo.id]
 	local rarity = Catalog.tiers[entry.tier]
 	local mutation = Catalog.mutations[cargo.mutation]
-	local accent = mutation.color or rarity.color
-	local body = entry.color
-	local model = Instance.new("Model")
-	model.Name = Catalog.name(cargo)
-	local biped = entry.shape % 2 == 1
-	local function piece(name, size, pos, color, material, shape)
-		return World.part(model, name, size, CFrame.new(pos), color, material, false, shape)
-	end
-	local pedestalScale = entry.tier >= 7 and 1.16 or entry.tier >= 6 and 1.12
-		or entry.tier >= 5 and 1.08 or entry.tier >= 4 and 1.04 or 1
-	local anchor = cylinder(model, "Hover Ring", Vector3.new(0, .2, 0), 3.6 * pedestalScale, .19, accent, neon)
-	cylinder(model, "Hover Plate", Vector3.new(0, .32, 0), 3.25 * pedestalScale, .17, ink)
-	model.PrimaryPart = anchor
-	anchor.PivotOffset = anchor.CFrame:ToObjectSpace(CFrame.identity)
-	local ball = Enum.PartType.Ball
-	piece("Suit", Vector3.new(2.0, 1.55, 1.65), Vector3.new(0, 1.65, 0), body, nil, biped and ball or nil)
-	piece("Helmet", Vector3.new(2.05, 1.57, 1.75), Vector3.new(0, 2.65, -.12), body:Lerp(ice, .16), nil,
-		entry.shape % 3 ~= 0 and ball or nil)
-	piece("Visor", Vector3.new(1.65, .73, .72), Vector3.new(0, 2.61, -.82), ink, nil, ball)
-	for _, x in ipairs({ -.36, .36 }) do
-		piece("Eye", Vector3.new(.21, .29, .12), Vector3.new(x, 2.65, -1.14), ice, neon, ball)
-	end
-	for _, x in ipairs({ -1.12, 1.12 }) do
-		piece("Glove", Vector3.new(.63, .64, .70), Vector3.new(x, 1.52, -.06), body, nil, ball)
-		local ear = entry.shape % 3
-		if ear ~= 1 then
-			piece("Helmet Fin", Vector3.new(.34, ear == 0 and .86 or .43, .49),
-				Vector3.new(x * .69, 3.28, .04), accent, nil, ear == 2 and ball or nil)
-		end
-		piece("Boot", Vector3.new(.70, .49, .99), Vector3.new(x * .48, .78, -.17), ink, nil, biped and ball or nil)
-	end
-	if entry.shape % 3 == 1 then
-		piece("Antenna", Vector3.new(.15, .61, .15), Vector3.new(0, 3.52, 0), dark)
-		piece("Beacon", Vector3.one * .43, Vector3.new(0, 3.9, 0), accent, neon, ball)
-	end
-	piece("Badge", Vector3.new(.38, .39, .15), Vector3.new(0, 1.49, -.81), accent, neon, ball)
-	if entry.tier >= 4 or mutation.color then
-		local haloRadius = 1.12 + math.max(0, entry.tier - 4) * .12
-		ring(model, Vector3.new(0, 3.8, 0), Vector3.xAxis, Vector3.zAxis, haloRadius, 10, .08, accent, neon)
-	end
+	local model = BrainrotModel.build(entry, rarity, mutation, Catalog.name(cargo), World.part)
 	model.Parent = parent
 	return model
 end
