@@ -82,7 +82,12 @@ function MeteorSolarEvents:Refresh()
 	self:Attribute("EventEndsAt", self.meteorActive and self.meteorUntil or self.solarActive and self.solarUntil or 0)
 	if self.refresh then self.refresh() end
 	-- Event text has one slot, but a shower and a flare may overlap.
-	if self.world.solarFlare then self.world.solarFlare(self.solarActive) end
+	if self.world.solarFlare then
+		-- Run after the legacy Event listener so it cannot hide an overlapping flare.
+		task.defer(function()
+			if self.world.root.Parent then self.world.solarFlare(self.solarActive) end
+		end)
+	end
 end
 
 function MeteorSolarEvents:Warn(position, now)
@@ -110,10 +115,10 @@ function MeteorSolarEvents:Warn(position, now)
 	if self.world.meteor then
 		self.world.meteor(position, Catalog.meteor.warning, Vector3.new(20, 72, -12))
 	else
-	local rock = self.world.part(warning, "Falling Meteor", Vector3.one * 3.4,
-		CFrame.new(position + Vector3.new(20, 72, -12)), self.world.gold, Enum.Material.Neon, false, Enum.PartType.Ball)
-	TweenService:Create(rock, TweenInfo.new(Catalog.meteor.warning, Enum.EasingStyle.Linear),
-		{ Position = position + Vector3.yAxis * 1.5 }):Play()
+		local rock = self.world.part(warning, "Falling Meteor", Vector3.one * 3.4,
+			CFrame.new(position + Vector3.new(20, 72, -12)), self.world.gold, Enum.Material.Neon, false, Enum.PartType.Ball)
+		TweenService:Create(rock, TweenInfo.new(Catalog.meteor.warning, Enum.EasingStyle.Linear),
+			{ Position = position + Vector3.yAxis * 1.5 }):Play()
 	end
 	self.pending[impact.id] = impact
 	self:Attribute("MeteorImpactPosition", position)
