@@ -1,1 +1,9 @@
-{"tour": 1, "steps": [{"screenshot": "1-start.png"}, {"screenshot": "2-play.png", "keys": ["Right"], "wait_ms": 1000}, {"screenshot": "3-end.png", "keys": ["Down"], "wait_ms": 1000}]}
+{
+  "tour": 1,
+  "steps": [
+    { "screenshot": "01-cover.jpg", "keys": ["1"], "wait_ms": 1000 },
+    { "screenshot": "02-topdown.jpg", "keys": ["5"], "wait_ms": 1000 },
+    { "screenshot": "03-legendary.jpg", "keys": ["6"], "wait_ms": 1000 },
+    { "screenshot": "04-skyline.jpg", "keys": ["7"], "wait_ms": 1000 }
+  ]
+}
