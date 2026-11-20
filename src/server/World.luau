@@ -1,0 +1,253 @@
+local Lighting = game:GetService("Lighting")
+local Catalog = require(game:GetService("ReplicatedStorage"):WaitForChild("Orbit"):WaitForChild("Catalog"))
+
+local World = {
+	cyan = Color3.fromRGB(42, 236, 255),
+	gold = Color3.fromRGB(255, 221, 81),
+	pink = Color3.fromRGB(248, 70, 213),
+	dark = Color3.fromRGB(20, 27, 49),
+	radius = 32,
+}
+local cyan, gold, pink, dark = World.cyan, World.gold, World.pink, World.dark
+local ink = Color3.fromRGB(9, 13, 27)
+local ice = Color3.fromRGB(226, 252, 255)
+local neon = Enum.Material.Neon
+
+function World.part(parent, name, size, cf, color, material, collide, shape)
+	local part = Instance.new("Part")
+	part.Name = name
+	part.Anchored = true
+	part.Size = size
+	part.CFrame = cf
+	part.Color = color
+	part.Material = material or Enum.Material.SmoothPlastic
+	part.CanCollide = collide == true
+	part.CanTouch = false
+	part.CanQuery = part.CanCollide
+	part.CastShadow = part.CanCollide
+	if shape then part.Shape = shape end
+	part.Parent = parent
+	return part
+end
+
+local function cylinder(parent, name, position, diameter, height, color, material, collide)
+	return World.part(parent, name, Vector3.new(height, diameter, diameter),
+		CFrame.new(position) * CFrame.Angles(0, 0, math.pi / 2), color, material, collide, Enum.PartType.Cylinder)
+end
+
+local function bar(parent, a, b, width, color, material, collide)
+	local distance = (b - a).Magnitude
+	return World.part(parent, "Beam", Vector3.new(width, width, distance + .04),
+		CFrame.lookAt((a + b) / 2, b), color, material, collide)
+end
+
+local function ring(parent, center, u, v, radius, count, width, color, material, collide)
+	for i = 0, count - 1 do
+		local a, b = i * math.pi * 2 / count, (i + 1) * math.pi * 2 / count
+		local function point(angle)
+			return center + radius * (u * math.cos(angle) + v * math.sin(angle))
+		end
+		bar(parent, point(a), point(b), width, color, material, collide)
+	end
+end
+
+function World.billboard(part, words, color, width, height, offset, distance)
+	local gui = Instance.new("BillboardGui")
+	gui.Size = UDim2.fromOffset(width, height)
+	gui.StudsOffsetWorldSpace = Vector3.new(0, offset, 0)
+	gui.MaxDistance = distance or 38
+	gui.Adornee = part
+	gui.Parent = part
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBold
+	label.TextScaled = true
+	label.Text = words
+	label.TextColor3 = color
+	label.TextStrokeColor3 = ink
+	label.TextStrokeTransparency = .18
+	label.Parent = gui
+	return label
+end
+
+local function sign(parent, cf, width, height, words, accent)
+	local panel = World.part(parent, words, Vector3.new(width, height, .5), cf, ink)
+	for _, face in ipairs({ Enum.NormalId.Front, Enum.NormalId.Back }) do
+		local gui = Instance.new("SurfaceGui")
+		gui.Face = face
+		gui.LightInfluence = 0
+		gui.CanvasSize = Vector2.new(width * 32, height * 32)
+		gui.Parent = panel
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.fromScale(.92, .77)
+		label.Position = UDim2.fromScale(.04, .08)
+		label.BackgroundTransparency = 1
+		label.Font = Enum.Font.GothamBlack
+		label.TextColor3 = accent
+		label.TextScaled = true
+		label.Text = words
+		label.Parent = gui
+	end
+	for _, y in ipairs({ -height / 2, height / 2 }) do
+		World.part(parent, "Sign Trim", Vector3.new(width, .12, .62), cf * CFrame.new(0, y, 0), accent, neon)
+	end
+	return panel
+end
+
+function World.prompt(part, action, object, key, hold, distance)
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = action
+	prompt.ObjectText = object
+	prompt.KeyboardKeyCode = key or Enum.KeyCode.E
+	prompt.GamepadKeyCode = Enum.KeyCode.ButtonX
+	prompt.HoldDuration = hold or .18
+	prompt.RequiresLineOfSight = false
+	prompt.MaxActivationDistance = distance or 9
+	prompt.Parent = part
+	return prompt
+end
+
+function World.build()
+	Lighting.ClockTime = 0
+	Lighting.Brightness = 1.7
+	Lighting.Ambient = Color3.fromRGB(92, 94, 128)
+	Lighting.OutdoorAmbient = Color3.fromRGB(75, 86, 121)
+	Lighting.ExposureCompensation = -.12
+
+	local glow = Instance.new("BloomEffect")
+	glow.Intensity = .78
+	glow.Size = 32
+	glow.Threshold = 1.08
+	glow.Parent = Lighting
+
+	local root = Instance.new("Folder")
+	root.Name = "RotOrbitStation"
+	root.Parent = workspace
+	World.root = root
+	local rng = Random.new(827)
+	for i = 1, 72 do
+		local theta = rng:NextNumber(0, math.pi * 2)
+		local pos = Vector3.new(math.cos(theta) * 300, rng:NextNumber(-45, 175), math.sin(theta) * 300)
+		local size = rng:NextNumber(.3, 1.2)
+		World.part(root, "Star", Vector3.one * size, CFrame.new(pos), i % 5 == 0 and cyan or ice, neon, false, Enum.PartType.Ball)
+	end
+	local planet = Vector3.new(-92, 57, -129)
+	World.part(root, "Ion Giant", Vector3.one * 33, CFrame.new(planet), Color3.fromRGB(29, 173, 201),
+		Enum.Material.Glass, false, Enum.PartType.Ball)
+	ring(root, planet, Vector3.new(.87, .49, 0), Vector3.zAxis, 24, 24, .22, cyan, neon)
+	ring(root, planet, Vector3.new(.87, .49, 0), Vector3.zAxis, 27, 24, .14, gold, neon)
+
+	cylinder(root, "Station Deck", Vector3.new(0, -1.2, 0), 156, 2.4, ink, Enum.Material.Metal, true)
+	cylinder(root, "Hull", Vector3.new(0, -4.2, 0), 151, 3, dark, Enum.Material.Metal)
+	cylinder(root, "Reactor Platform", Vector3.new(0, -.1, 0), 21, .4, dark)
+	cylinder(root, "Reactor Well", Vector3.new(0, .14, 0), 11, .17, Color3.fromRGB(15, 97, 121), neon)
+	cylinder(root, "Reactor Core", Vector3.new(0, .24, 0), 3.4, .1, cyan, neon)
+	ring(root, Vector3.new(0, 1.08, 0), Vector3.xAxis, Vector3.zAxis, 77, 40, .9, dark, nil, true)
+	ring(root, Vector3.new(0, 1.58, 0), Vector3.xAxis, Vector3.zAxis, 77, 40, .15, cyan, neon)
+	for _, spec in ipairs({ { 28.8, cyan }, { 29.8, dark }, { 34.2, dark }, { 35.2, gold } }) do
+		ring(root, Vector3.new(0, .12, 0), Vector3.xAxis, Vector3.zAxis, spec[1], 48,
+			spec[2] == dark and .75 or .23, spec[2], spec[2] == dark and Enum.Material.Metal or neon)
+	end
+	for i = 0, 23 do
+		local angle = i * math.pi / 12
+		local axis = Vector3.new(math.cos(angle), 0, math.sin(angle))
+		local y = Vector3.new(0, .06, 0)
+		bar(root, axis * 12 + y, axis * 25.5 + y, .075, i % 3 == 0 and pink or cyan, neon)
+		bar(root, axis * 36.8 + y, axis * 43 + y, .10, i % 3 == 0 and gold or cyan, neon)
+	end
+	for _, x in ipairs({ -12.6, 12.6 }) do
+		World.part(root, "Marquee Support", Vector3.new(.55, 9.5, .75), CFrame.new(x, 4.75, -5), cyan, Enum.Material.Metal)
+	end
+	sign(root, CFrame.new(0, 9.15, -5), 26, 4.5, "ROT ORBIT", ice)
+	sign(root, CFrame.new(0, 6.0, -5), 19, 1.25, "ORBIT MARKET  /  DOCKING RING", cyan)
+
+	local bays = {}
+	for i = 1, 6 do
+		local angle = (i - 1) * math.pi / 3 + math.pi / 2
+		local backward = Vector3.new(math.cos(angle), 0, math.sin(angle))
+		local center = backward * 56
+		local pivot = CFrame.lookAt(center, center - backward)
+		local accent = i % 3 == 0 and gold or cyan
+		World.part(root, "Bay Deck", Vector3.new(27, .45, 19), pivot * CFrame.new(0, .19, 0), dark, Enum.Material.Metal, true)
+		for _, x in ipairs({ -13.5, 13.5 }) do
+			World.part(root, "Bay Stripe", Vector3.new(.17, .13, 19), pivot * CFrame.new(x, .47, 0), accent, neon)
+			World.part(root, "Bay Pylon", Vector3.new(.45, 5, .45), pivot * CFrame.new(x, 2.7, 9), accent, Enum.Material.Metal)
+		end
+		local header = sign(root, pivot * CFrame.new(0, 5.2, 9), 27, 2.1, "BAY " .. i .. "  /  VACANT", accent)
+		local bay = { header = header, slots = {}, spawn = pivot * CFrame.new(0, 3.5, -12), center = center }
+		for slot = 1, 6 do
+			local x = ((slot - 1) % 3 - 1) * 7.7
+			local z = slot <= 3 and -2.5 or 5
+			local pos = (pivot * CFrame.new(x, .5, z)).Position
+			cylinder(root, "Dock Base", pos, 5.4, .5, ink, Enum.Material.Metal)
+			cylinder(root, "Dock Ring", pos + Vector3.new(0, .29, 0), 5.05, .12, accent, neon)
+			local pad = cylinder(root, "Dock " .. slot, pos + Vector3.new(0, .42, 0), 4.55, .2, dark)
+			bay.slots[slot] = { pad = pad, cf = CFrame.lookAt(pad.Position, pad.Position - backward) }
+		end
+		local bank = World.part(root, "Credit Terminal", Vector3.new(2.6, 2.5, 1.6), pivot * CFrame.new(-8.5, 1.55, -7.7), dark)
+		World.part(root, "Terminal Screen", Vector3.new(2.1, .87, .13), pivot * CFrame.new(-8.5, 2.1, -8.55), accent, neon)
+		bay.bank = bank
+		World.billboard(bank, "COLLECT", gold, 98, 21, 1.8, 24)
+		bays[i] = bay
+	end
+	for _, x in ipairs({ -43, 43 }) do
+		local center = Vector3.new(x, 6.2, 0)
+		ring(root, center, Vector3.zAxis, Vector3.yAxis, 6, 26, .24, x < 0 and cyan or gold, neon)
+		ring(root, center, Vector3.zAxis, Vector3.yAxis, 6.5, 26, .14, x < 0 and gold or pink, neon)
+	end
+	return bays
+end
+
+function World.title(bay, name)
+	for _, gui in ipairs(bay.header:GetChildren()) do
+		gui.TextLabel.Text = name
+	end
+end
+
+function World.figure(cargo, parent)
+	local entry = Catalog.entries[cargo.id]
+	local rarity = Catalog.tiers[entry.tier]
+	local mutation = Catalog.mutations[cargo.mutation]
+	local accent = mutation.color or rarity.color
+	local body = entry.color
+	local model = Instance.new("Model")
+	model.Name = Catalog.name(cargo)
+	local biped = entry.shape % 2 == 1
+	local function piece(name, size, pos, color, material, shape)
+		return World.part(model, name, size, CFrame.new(pos), color, material, false, shape)
+	end
+	local anchor = cylinder(model, "Hover Ring", Vector3.new(0, .2, 0), 3.6, .19, accent, neon)
+	cylinder(model, "Hover Plate", Vector3.new(0, .32, 0), 3.25, .17, ink)
+	model.PrimaryPart = anchor
+	anchor.PivotOffset = anchor.CFrame:ToObjectSpace(CFrame.identity)
+	local ball = Enum.PartType.Ball
+	piece("Suit", Vector3.new(2.0, 1.55, 1.65), Vector3.new(0, 1.65, 0), body, nil, biped and ball or nil)
+	piece("Helmet", Vector3.new(2.05, 1.57, 1.75), Vector3.new(0, 2.65, -.12), body:Lerp(ice, .16), nil,
+		entry.shape % 3 ~= 0 and ball or nil)
+	piece("Visor", Vector3.new(1.65, .73, .72), Vector3.new(0, 2.61, -.82), ink, nil, ball)
+	for _, x in ipairs({ -.36, .36 }) do
+		piece("Eye", Vector3.new(.21, .29, .12), Vector3.new(x, 2.65, -1.14), ice, neon, ball)
+	end
+	for _, x in ipairs({ -1.12, 1.12 }) do
+		piece("Glove", Vector3.new(.63, .64, .70), Vector3.new(x, 1.52, -.06), body, nil, ball)
+		local ear = entry.shape % 3
+		if ear ~= 1 then
+			piece("Helmet Fin", Vector3.new(.34, ear == 0 and .86 or .43, .49),
+				Vector3.new(x * .69, 3.28, .04), accent, nil, ear == 2 and ball or nil)
+		end
+		piece("Boot", Vector3.new(.70, .49, .99), Vector3.new(x * .48, .78, -.17), ink, nil, biped and ball or nil)
+	end
+	if entry.shape % 3 == 1 then
+		piece("Antenna", Vector3.new(.15, .61, .15), Vector3.new(0, 3.52, 0), dark)
+		piece("Beacon", Vector3.one * .43, Vector3.new(0, 3.9, 0), accent, neon, ball)
+	end
+	piece("Badge", Vector3.new(.38, .39, .15), Vector3.new(0, 1.49, -.81), accent, neon, ball)
+	if entry.tier >= 4 or mutation.color then
+		ring(model, Vector3.new(0, 3.9, 0), Vector3.xAxis, Vector3.zAxis, 1.18, 10, .08, accent, neon)
+	end
+	model.Parent = parent
+	return model
+end
+
+return World
