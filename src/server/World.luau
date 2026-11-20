@@ -180,8 +180,8 @@ function World.build()
 	ring(root, Vector3.new(0, 1.7, 0), Vector3.xAxis, Vector3.zAxis, 77, 40, .17, cyan, neon)
 	for i = 0, 11 do
 		local angle = i * math.pi / 6
-		local position = Vector3.new(math.cos(angle) * 77, 1.75, math.sin(angle) * 77)
-		World.part(root, "Orbit Rail Post", Vector3.new(.2, 2.4, .2), CFrame.new(position), dark, Enum.Material.Metal)
+		local position = Vector3.new(math.cos(angle) * 77, 1.4, math.sin(angle) * 77)
+		World.part(root, "Orbit Rail Post", Vector3.new(.2, 2.8, .2), CFrame.new(position), dark, Enum.Material.Metal)
 		World.part(root, "Rail Marker", Vector3.new(.3, .28, .3), CFrame.new(position + Vector3.new(0, 1.28, 0)),
 			i % 3 == 0 and gold or cyan, neon)
 	end
