@@ -150,15 +150,22 @@ player:GetAttributeChangedSignal("Carry"):Connect(function()
 end)
 
 local function renderIncident()
+	local now = workspace:GetServerTimeNow()
 	local raid = workspace:GetAttribute("Raid") or ""
 	local text = raid ~= "" and raid or (workspace:GetAttribute("Event") or ""):upper()
 	local deadline = workspace:GetAttribute(raid ~= "" and "RaidEndsAt" or "EventEndsAt") or 0
-	if raid ~= "" then text ..= "  •  " .. (workspace:GetAttribute("RaidHealth") or 0) .. " HP" end
-	if text ~= "" and deadline > 0 then text ..= "  •  " .. math.max(0, math.ceil(deadline - workspace:GetServerTimeNow())) .. "s" end
+	local health = workspace:GetAttribute("RaidHealth") or 0
+	if raid ~= "" and health > 0 then text ..= "  •  " .. health .. " HP" end
+	if text ~= "" and deadline > 0 then text ..= "  •  " .. math.max(0, math.ceil(deadline - now)) .. "s" end
+	if text == "" and now < (workspace:GetAttribute("RareCargoEndsAt") or 0) then
+		text = workspace:GetAttribute("RareCargo") or ""
+	end
 	incident.Text = text
 end
 workspace:GetAttributeChangedSignal("Raid"):Connect(renderIncident)
+workspace:GetAttributeChangedSignal("RaidHealth"):Connect(renderIncident)
 workspace:GetAttributeChangedSignal("Event"):Connect(renderIncident)
+workspace:GetAttributeChangedSignal("RareCargoEndsAt"):Connect(renderIncident)
 renderIncident()
 local function updateSkills()
 	local compactLabels = UserInputService.TouchEnabled or (gui.AbsoluteSize.X > gui.AbsoluteSize.Y and gui.AbsoluteSize.Y < 500)
