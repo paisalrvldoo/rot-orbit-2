@@ -6,6 +6,7 @@ local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 local orbit = ReplicatedStorage:WaitForChild("Orbit")
 local Catalog = require(orbit:WaitForChild("Catalog"))
+local ScreenshotMode = require(orbit:WaitForChild("ScreenshotMode"))
 local action = orbit:WaitForChild("Action")
 
 local gui = Instance.new("ScreenGui")
@@ -414,27 +415,39 @@ for id in ipairs(Catalog.crews) do
 	workspace:GetAttributeChangedSignal("CrewMembers" .. id):Connect(refreshMenu)
 end
 
+local cameraShots = {
+	Cover = CFrame.lookAt(Vector3.new(1, 59, 77), Vector3.new(0, 1, -8)),
+	Raid = CFrame.lookAt(Vector3.new(27, 14, 17), Vector3.new(44, 4, 0)),
+}
+local originalFov
+ScreenshotMode.Listen(function(scene)
+	local camera = workspace.CurrentCamera
+	if not camera then return end
+	originalFov = originalFov or camera.FieldOfView
+	menu.Visible = false
+	if scene == "Reset" then
+		camera.CameraType = Enum.CameraType.Custom
+		camera.CameraSubject = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		camera.FieldOfView = originalFov
+		wallet.Visible, guideBox.Visible, notice.Visible, incident.Visible, skillBar.Visible, menuButton.Visible = true, true, true, true, true, true
+	elseif scene == "Index" or scene == "Upgrades" then
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = cameraShots.Cover
+		openMenu(scene)
+	else
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.CFrame = cameraShots[scene]
+		camera.FieldOfView = scene == "Cover" and 60 or 65
+		wallet.Visible, guideBox.Visible, notice.Visible, incident.Visible, skillBar.Visible, menuButton.Visible = false, false, false, false, false, false
+	end
+end)
+
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
 	if input.KeyCode == Enum.KeyCode.I then
 		if menu.Visible then menu.Visible = false else openMenu("Index") end
 	end
 	if not RunService:IsStudio() or not workspace.CurrentCamera then return end
-	local camera = workspace.CurrentCamera
-	if input.KeyCode == Enum.KeyCode.One then
-		menu.Visible = false
-		camera.CameraType = Enum.CameraType.Scriptable
-		camera.CFrame = CFrame.lookAt(Vector3.new(1, 59, 77), Vector3.new(0, 1, -8))
-		wallet.Visible, guideBox.Visible, notice.Visible, incident.Visible, skillBar.Visible, menuButton.Visible = false, false, false, false, false, false
-	elseif input.KeyCode == Enum.KeyCode.Two or input.KeyCode == Enum.KeyCode.Four then
-		openMenu(input.KeyCode == Enum.KeyCode.Two and "Index" or "Upgrades")
-	elseif input.KeyCode == Enum.KeyCode.Three then
-		menu.Visible = false
-		camera.CameraType = Enum.CameraType.Scriptable
-		camera.CFrame = CFrame.lookAt(Vector3.new(27, 14, 17), Vector3.new(44, 4, 0))
-	elseif input.KeyCode == Enum.KeyCode.Zero then
-		menu.Visible = false
-		camera.CameraType = Enum.CameraType.Custom
-		wallet.Visible, guideBox.Visible, notice.Visible, incident.Visible, skillBar.Visible, menuButton.Visible = true, true, true, true, true, true
-	end
+	local scene = ({ [Enum.KeyCode.One] = "Cover", [Enum.KeyCode.Two] = "Index", [Enum.KeyCode.Three] = "Raid", [Enum.KeyCode.Four] = "Upgrades", [Enum.KeyCode.Zero] = "Reset" })[input.KeyCode]
+	if scene then ScreenshotMode.Select(scene) end
 end)

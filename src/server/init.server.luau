@@ -1,11 +1,13 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local Orbit = ReplicatedStorage:WaitForChild("Orbit")
 local Catalog = require(Orbit:WaitForChild("Catalog"))
 local World = require(script:WaitForChild("World"))
 local CrewService = require(script:WaitForChild("CrewService"))
 local DataService = require(script:WaitForChild("DataService"))
 local SkillService = require(script:WaitForChild("SkillService"))
+local ScreenshotMode = require(Orbit:WaitForChild("ScreenshotMode"))
 local data = DataService.new()
 
 local rng = Random.new()
@@ -21,6 +23,25 @@ local serverClosing = false
 local action = Instance.new("RemoteEvent")
 action.Name = "Action"
 action.Parent = Orbit
+local screenshot = Instance.new("RemoteEvent")
+screenshot.Name = "Screenshot"
+screenshot.Parent = Orbit
+
+if RunService:IsStudio() then
+	local previews = {}
+	ScreenshotMode.Configure(function(scene, target)
+		if previews[target] then previews[target]:Destroy(); previews[target] = nil end
+		if scene == "Raid" then
+			local model = World.gremlin()
+			model:PivotTo(CFrame.lookAt(World.portal + Vector3.new(-4, 0, 4), Vector3.new(0, World.portal.Y, 0)))
+			previews[target] = model
+			task.delay(25, function()
+				if previews[target] == model then model:Destroy(); previews[target] = nil end
+			end)
+		end
+		screenshot:FireClient(target, scene)
+	end)
+end
 
 local function message(player, words)
 	player:SetAttribute("OrbitMessage", words)
@@ -506,6 +527,12 @@ local function moveRaid(delta, now)
 end
 
 action.OnServerEvent:Connect(function(player, request, value)
+	if request == "Screenshot" then
+		if RunService:IsStudio() and (value == "Cover" or value == "Index" or value == "Raid" or value == "Upgrades" or value == "Reset") then
+			ScreenshotMode.Select(value, player)
+		end
+		return
+	end
 	local state, root = profiles[player], rootOf(player)
 	if not state or state.loading or state.closing or not root then return end
 	local now = workspace:GetServerTimeNow()
