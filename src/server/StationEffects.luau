@@ -40,6 +40,8 @@ function StationEffects.bind(root, part, reactor, grade, shelters)
 
 	local function meteor(impact, duration, offset)
 		if active >= maxMeteors or not root.Parent or root:GetAttribute("ScreenshotFrozen") then return end
+		-- The gameplay target is below the raised decks; keep the existing impact visible.
+		impact = Vector3.new(impact.X, math.max(impact.Y, .65), impact.Z)
 		local travel = offset or Vector3.new(-41, 79, 25)
 		if travel.Magnitude < .01 then travel = Vector3.new(0, 79, 0) end
 		local seconds = math.clamp(duration or 1.4, .25, 5)

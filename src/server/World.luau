@@ -19,6 +19,10 @@ local ice = Color3.fromRGB(226, 252, 255)
 local neon = Enum.Material.Neon
 
 function World.part(parent, name, size, cf, color, material, collide, shape, className)
+	-- Gameplay targets Y=.2; warning markers must clear the raised bay decks.
+	if name == "Danger Boundary" or name == "Impact Target" then
+		cf += Vector3.yAxis * math.max(0, .65 - cf.Position.Y)
+	end
 	local part = Instance.new(className or "Part")
 	part.Name = name
 	part.Anchored = true
