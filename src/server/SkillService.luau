@@ -11,7 +11,7 @@ function SkillService.Update(player, state)
 	humanoid.WalkSpeed = speed + 2 * (state.speedLevel or 0)
 end
 
-function SkillService.Use(player, state, name)
+function SkillService.Use(player, state, name, limitBlink)
 	local skill = Catalog.skills[name]
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -34,6 +34,8 @@ function SkillService.Use(player, state, name)
 		direction = direction.Unit
 		local distance = state.carry and skill.carryDistance or skill.distance
 		if state.rebirths >= 2 then distance += state.carry and 4 or 8 end
+		distance = limitBlink(root.Position, direction, distance)
+		if distance < 3 then return false, "Blink blocked by a bay shield." end
 		local params = RaycastParams.new()
 		params.FilterType = Enum.RaycastFilterType.Exclude
 		params.FilterDescendantsInstances = state.carry and { character, state.carry.model } or { character }

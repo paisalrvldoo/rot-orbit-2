@@ -4,6 +4,7 @@ local TweenService = game:GetService("TweenService")
 local CollectionService = game:GetService("CollectionService")
 local Catalog = require(game:GetService("ReplicatedStorage"):WaitForChild("Orbit"):WaitForChild("Catalog"))
 local SkillService = require(script.Parent.SkillService)
+local BayShield = require(script.Parent.BayShield)
 local MeteorSolarEvents = {}
 MeteorSolarEvents.__index = MeteorSolarEvents
 
@@ -64,10 +65,7 @@ function MeteorSolarEvents:IsProtected(position, now)
 		end
 	end
 	for _, state in pairs(self.profiles) do
-		if not state.loading and not state.closing and now < state.lockedUntil then
-			local offset = position - state.bay.center
-			if math.abs(offset.Y) <= 12 and Vector3.new(offset.X, 0, offset.Z).Magnitude <= 16 then return true end
-		end
+		if BayShield.IsActive(state, now) and BayShield.Contains(position, state.bay) then return true end
 	end
 	return false
 end

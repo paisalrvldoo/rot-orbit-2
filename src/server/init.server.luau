@@ -10,6 +10,7 @@ local World = require(script:WaitForChild("World"))
 local CrewService = require(script:WaitForChild("CrewService"))
 local DataService = require(script:WaitForChild("DataService"))
 local SkillService = require(script:WaitForChild("SkillService"))
+local BayShield = require(script:WaitForChild("BayShield"))
 local EconomyService = require(script:WaitForChild("EconomyService"))
 local MeteorSolarEvents = require(script:WaitForChild("MeteorSolarEvents"))
 local RivalService = require(script:WaitForChild("RivalService"))
@@ -65,6 +66,7 @@ local function sync(player, state)
 	player:SetAttribute("Loading", state.loading == true)
 	player:SetAttribute("SaveStatus", state.saveStatus or "Loading")
 	player:SetAttribute("LockedUntil", state.lockedUntil)
+	state.bay.header:SetAttribute("LockedUntil", state.lockedUntil)
 	player:SetAttribute("LockReady", state.lockReady)
 	player:SetAttribute("LockDuration", Catalog.lockDuration(state))
 	player:SetAttribute("Upgrade", state.level)
@@ -147,19 +149,22 @@ end
 local rivals = RivalService.new({ bays = bays, profiles = profiles, world = World, random = rng,
 	clearSource = clearSource, updateSlot = updateSlot, dockCargo = dockCargo })
 
-local function dropPurchased(cargo, position)
+local function dropCargo(cargo, position, secured)
 	if not position or Vector3.new(position.X, 0, position.Z).Magnitude > 75 then
-		cargo.model:Destroy()
+		returnCargo(cargo)
 		return
 	end
 	cargo.model:PivotTo(CFrame.new(position.X, .55, position.Z))
 	local prompt = World.prompt(cargo.model.PrimaryPart, "Recover Cargo", Catalog.name(cargo), Enum.KeyCode.E, .32)
 	drops[cargo] = prompt
+	local claimUntil = workspace:GetServerTimeNow() + 6
 	prompt.Triggered:Connect(function(player)
 		if World.root:GetAttribute("ScreenshotFrozen") then return end
 		local state = profiles[player]
 		if drops[cargo] ~= prompt or not state or state.loading or state.closing or state.carry
 			or not near(player, cargo.model.PrimaryPart.Position, 10) then return end
+		local now = workspace:GetServerTimeNow()
+		if now < (state.stunnedUntil or 0) then return end
 		if cargo.source and cargo.source.bay == state.bay then
 			drops[cargo] = nil
 			prompt:Destroy()
@@ -173,6 +178,10 @@ local function dropPurchased(cargo, position)
 			prompt:Destroy()
 			returnCargo(cargo)
 			message(player, "Squad cargo recovered and returned to its owner's bay.")
+			return
+		end
+		if owner and (secured or now < claimUntil) then
+			message(player, "The owning squad has first claim on this cargo.")
 			return
 		end
 		if not EconomyService.FreeSlot(state) then
@@ -189,6 +198,11 @@ local function dropPurchased(cargo, position)
 	task.delay(25, function()
 		if drops[cargo] ~= prompt then return end
 		drops[cargo] = nil
+		prompt:Destroy()
+		if secured then
+			returnCargo(cargo)
+			return
+		end
 		local source = clearSource(cargo)
 		if source and source.bay.owner then message(source.bay.owner, "Rift recovery window expired. Your slot is available again.") end
 		cargo.model:Destroy()
@@ -205,13 +219,13 @@ local weather = MeteorSolarEvents.new({
 	drop = function(player, state, position)
 		local cargo = state.carry
 		setCarry(player, state, nil)
-		dropPurchased(cargo, position)
+		dropCargo(cargo, position)
 	end,
 	onShowerEnd = function()
 		local cargo = { id = rng:NextInteger(8, 21), mutation = meteorMutation }
 		meteorMutation = meteorMutation == #Catalog.mutations and 2 or meteorMutation + 1
 		cargo.model = World.figure(cargo, World.root)
-		dropPurchased(cargo, Vector3.zero)
+		dropCargo(cargo, Vector3.zero)
 		announce("Shower cleared. Mutated meteor salvage is available at the reactor.")
 	end,
 })
@@ -329,12 +343,13 @@ for i, bay in ipairs(bays) do
 				if now < (state.stunnedUntil or 0) then message(player, "Wait for the stun to end before stealing.") return end
 				if CrewService.Same(state, ownerState) then message(player, "Squad cargo is protected.") return end
 				if not EconomyService.FreeSlot(state) then message(player, "Recycle cargo to free a docking slot first.") return end
-				if workspace:GetServerTimeNow() < (state.stealReady or 0) then message(player, "Your theft scanner is recharging.") return end
-				if ownerState and now < ownerState.lockedUntil then
+				if now < (state.stealReady or 0) then message(player, "Your theft scanner is recharging.") return end
+				if ownerState and BayShield.IsActive(ownerState, now) then
 					message(player, "That bay is sealed.")
 					return
 				end
 				local cargo = take(slot)
+				EconomyService.Activity(state, "Steal", cargo)
 				setCarry(player, state, cargo)
 				if ownerState then
 					sync(owner, ownerState)
@@ -364,7 +379,8 @@ for i, bay in ipairs(bays) do
 			if source and source.bay.owner and profiles[source.bay.owner] then
 				sync(source.bay.owner, profiles[source.bay.owner])
 				message(source.bay.owner, "The thief docked your cargo. Keep your bay sealed during the next run.")
-				task.spawn(function() data:Save(source.bay.owner, false) end)
+				local owner = source.bay.owner
+				task.spawn(function() data:Save(owner, false) end)
 			end
 		end)
 	end
@@ -397,7 +413,7 @@ local function join(player)
 				if state and state.carry then
 					local cargo = state.carry
 					setCarry(player, state, nil)
-					if cargo.source then returnCargo(cargo) else dropPurchased(cargo, root.Position) end
+					if cargo.source then returnCargo(cargo) else dropCargo(cargo, root.Position) end
 				end
 			end)
 		end
@@ -462,6 +478,7 @@ Players.PlayerRemoving:Connect(function(player)
 		updateSlot(slot)
 	end
 	bay.owner = nil
+	bay.header:SetAttribute("LockedUntil", 0)
 	bay.collectPrompt:SetAttribute("Owner", 0)
 	bay.lockPrompt:SetAttribute("Owner", 0)
 	bay.lockLabel.Text = "BAY OPEN"
@@ -565,7 +582,7 @@ finishRaid = function(recovered)
 	else
 		local source = active.cargo.source
 		-- The escaping gremlin drops the loot at the portal for a final recovery window.
-		dropPurchased(active.cargo, World.portal)
+		dropCargo(active.cargo, World.portal)
 		if source and source.bay.owner then message(source.bay.owner, "Your cargo fell at the rift. Recover it before it expires.") end
 	end
 end
@@ -601,9 +618,9 @@ local function moveRaid(delta, now)
 	local slot = active.target
 	local owner = slot.bay.owner
 	local state = owner and profiles[owner]
-	if not active.cargo and (not slot.cargo or not state or state.loading or state.closing or now < state.lockedUntil) then
+	if not active.cargo and (not slot.cargo or not state or state.loading or state.closing or BayShield.IsActive(state, now)) then
 		finishRaid(false)
-		if owner and state and not state.closing then
+		if state and BayShield.IsActive(state, now) then
 			state.cash += 25
 			crews:Award(state, 5)
 			sync(owner, state)
@@ -643,7 +660,9 @@ action.OnServerEvent:Connect(function(player, request, value)
 	if now < (state.actionReady or 0) then return end
 	state.actionReady = now + .12
 	if request == actions.Blink or request == actions.Sprint then
-		local success, words = SkillService.Use(player, state, request)
+		local success, words = SkillService.Use(player, state, request, function(origin, direction, distance)
+			return BayShield.BlinkDistance(profiles, origin, direction, distance, now)
+		end)
 		if success then World.flash(root.Position, World.cyan, request == actions.Blink and 5 or 3)
 		elseif words then message(player, words) end
 		return
@@ -713,21 +732,23 @@ action.OnServerEvent:Connect(function(player, request, value)
 		return
 	end
 	if now < state.zapReady then return end
-	state.zapReady = now + 3
+	state.zapReady = now + Catalog.zap.cooldown
 	player:SetAttribute("ZapReady", state.zapReady)
 	World.flash(root.Position, World.cyan, 7)
-	local target, targetState, best = nil, nil, 23
+	local target, targetState, targetPosition, best = nil, nil, nil, Catalog.zap.range
 	for other, otherState in pairs(profiles) do
 		local cargo = otherState.carry
-		if other ~= player and cargo and cargo.source and not CrewService.Same(state, otherState) then
+		if other ~= player and not otherState.loading and not otherState.closing and cargo and cargo.source
+			and not CrewService.Same(state, otherState) then
 			local otherRoot = rootOf(other)
 			local distance = otherRoot and (root.Position - otherRoot.Position).Magnitude
-			if distance and distance < best then
-				target, targetState, best = other, otherState, distance
+			if distance and distance <= best and not BayShield.BlocksZap(profiles, root.Position, otherRoot.Position, now) then
+				target, targetState, targetPosition, best = other, otherState, otherRoot.Position, distance
 			end
 		end
 	end
-	if raid and (raid.position - root.Position).Magnitude < best then
+	if raid and (raid.position - root.Position).Magnitude <= best
+		and not BayShield.BlocksZap(profiles, root.Position, raid.position, now) then
 		World.flash(raid.position + Vector3.yAxis * 2, World.gold, 6)
 		EconomyService.Activity(state, "Zap")
 		raid.health -= 1
@@ -738,8 +759,15 @@ action.OnServerEvent:Connect(function(player, request, value)
 			sync(player, state)
 			return
 		end
-		local boss, position = raid.boss, raid.position
+		local boss, position, cargo = raid.boss, raid.position, raid.cargo
+		raid.cargo = nil
 		finishRaid(true)
+		announce(player.DisplayName .. " zapped the rift gremlin.")
+		if cargo then
+			dropCargo(cargo, position, true)
+			local owner = cargo.source and cargo.source.bay.owner
+			if owner then message(owner, "Raid cargo dropped. Recover it where the gremlin fell.") end
+		end
 		local reward = boss and 220 or 65
 		state.cash += reward
 		crews:Award(state, boss and 30 or 10)
@@ -752,17 +780,16 @@ action.OnServerEvent:Connect(function(player, request, value)
 			end
 		end
 		sync(player, state)
-		announce(player.DisplayName .. " zapped the rift gremlin.")
 		message(player, (boss and "Boss" or "Gremlin") .. " repelled  /  +$" .. reward)
 	elseif target then
 		local cargo = targetState.carry
 		setCarry(target, targetState, nil)
-		returnCargo(cargo)
-		targetState.stunnedUntil = now + 1.2
-		targetState.stealReady = now + 6
+		dropCargo(cargo, targetPosition, true)
+		targetState.stunnedUntil = math.max(now + Catalog.zap.stun, targetState.stunnedUntil or 0)
+		targetState.stealReady = now + Catalog.zap.stealCooldown
 		SkillService.Update(target, targetState)
-		message(target, "You were zapped. The cargo went back to its bay.")
-		message(player, "Cargo returned to its bay.")
+		message(target, "You were zapped and dropped the stolen cargo.")
+		message(player, "Stolen cargo dropped. Recover it with E.")
 	else
 		message(player, "Zap needs a gremlin or cargo thief within 22 studs.")
 	end
