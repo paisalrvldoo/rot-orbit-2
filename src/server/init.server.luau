@@ -303,10 +303,10 @@ end)
 local themes = { 1, 2, 1, 3, 1, 4, 2, 1, 5, 2, 3, 6 }
 local function roll(index, first)
 	local tier = themes[index]
-	local id = (tier - 1) * 7 + (first and index == 1 and 1 or rng:NextInteger(1, 7))
-	local chance = rng:NextNumber()
-	local mutation = not first and (tier ~= 1 or index ~= 1)
-		and (chance < .008 and 4 or chance < .025 and 3 or chance < .10 and 2 or 1) or 1
+	if index == #themes and rng:NextNumber() < .12 then tier = 7 end
+	local choices = Catalog.byTier[tier]
+	local id = first and index == 1 and 1 or choices[rng:NextInteger(1, #choices)]
+	local mutation = not first and index ~= 1 and Catalog.rollMutation(rng) or 1
 	local cargo = { id = id, mutation = mutation }
 	cargo.model = World.figure(cargo, World.root)
 	return cargo

@@ -7,6 +7,7 @@ Catalog.tiers = {
 	{ name = "Epic", color = Color3.fromRGB(240, 111, 255), price = 1100, rate = 72 },
 	{ name = "Legendary", color = Color3.fromRGB(255, 213, 81), price = 3000, rate = 185 },
 	{ name = "Mythic", color = Color3.fromRGB(255, 103, 126), price = 8500, rate = 490 },
+	{ name = "Cosmic", color = Color3.fromRGB(170, 255, 233), price = 24000, rate = 1350 },
 }
 
 local names = {
@@ -16,10 +17,13 @@ local names = {
 	{ "Turbo Truffle", "Astro Axoloco", "Neon Nachonaut", "Mochi Mirage", "Captain Calzone", "Pixel Pineapod", "Robo Rigatoni" },
 	{ "Solar Salamango", "Emperor Eggclipse", "Gold Guaczilla", "Duke Dango", "Plasma Panini", "Cosmic Cornado", "Saturn Sorbet" },
 	{ "Void Volcanoli", "Omega Omelord", "Nova Narwhal", "Black Hole Baguette", "Zenith Zappuccino", "Galactic Gelato", "Oracle Orzo" },
+	{ "Infinity Macaron", "Nebula Nectaroon", "Singularity Saffron" },
 }
 
 Catalog.entries = {}
+Catalog.byTier = {}
 for tier, group in ipairs(names) do
+	Catalog.byTier[tier] = {}
 	for slot, name in ipairs(group) do
 		local id = #Catalog.entries + 1
 		local rarity = Catalog.tiers[tier]
@@ -30,15 +34,28 @@ for tier, group in ipairs(names) do
 			price = math.floor(rarity.price * (1 + (slot - 1) * .11)),
 			rate = math.floor(rarity.rate * (1 + (slot - 1) * .13)),
 		}
+		table.insert(Catalog.byTier[tier], id)
 	end
 end
 
 Catalog.mutations = {
 	{ name = "", factor = 1 },
-	{ name = "Ion", factor = 2, color = Color3.fromRGB(71, 255, 240) },
-	{ name = "Gilded", factor = 3, color = Color3.fromRGB(255, 208, 73) },
-	{ name = "Eclipse", factor = 5, color = Color3.fromRGB(231, 103, 255) },
+	{ name = "Ion", factor = 2, chance = .08, color = Color3.fromRGB(71, 255, 240) },
+	{ name = "Gilded", factor = 3, chance = .025, color = Color3.fromRGB(255, 208, 73) },
+	{ name = "Eclipse", factor = 5, chance = .012, color = Color3.fromRGB(231, 103, 255) },
+	{ name = "Aurora", factor = 7, chance = .006, color = Color3.fromRGB(137, 255, 161) },
+	{ name = "Zero-G", factor = 10, chance = .003, color = Color3.fromRGB(181, 213, 255) },
+	{ name = "Supernova", factor = 15, chance = .001, color = Color3.fromRGB(255, 141, 82) },
 }
+
+function Catalog.rollMutation(random)
+	local chance, cumulative = random:NextNumber(), 0
+	for mutation = #Catalog.mutations, 2, -1 do
+		cumulative += Catalog.mutations[mutation].chance
+		if chance < cumulative then return mutation end
+	end
+	return 1
+end
 
 Catalog.upgrades = { 240, 620, 1550, 3800, 8000 }
 Catalog.contracts = {
