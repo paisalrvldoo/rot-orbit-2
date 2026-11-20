@@ -457,7 +457,11 @@ end)
 local themes = Catalog.marketThemes
 local function roll(index, first)
 	local tier = themes[index]
-	if index == #themes and rng:NextNumber() < Catalog.cosmicChance then tier = #Catalog.tiers end
+	if index == #themes then
+		local chance = rng:NextNumber()
+		if chance < Catalog.secretChance then tier = 8
+		elseif chance < Catalog.secretChance + Catalog.cosmicChance then tier = 7 end
+	end
 	local choices = Catalog.byTier[tier]
 	local id = first and index == 1 and 1 or choices[rng:NextInteger(1, #choices)]
 	local mutation = not first and index ~= 1 and Catalog.rollMutation(rng) or 1

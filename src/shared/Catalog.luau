@@ -10,6 +10,7 @@ Catalog.tiers = {
 	{ name = "Legendary", color = Color3.fromRGB(255, 213, 81), price = 3000, rate = 185 },
 	{ name = "Mythic", color = Color3.fromRGB(255, 103, 126), price = 8500, rate = 490 },
 	{ name = "Cosmic", color = Color3.fromRGB(170, 255, 233), price = 24000, rate = 1350 },
+	{ name = "SECRET", color = Color3.fromRGB(255, 146, 83), price = 96000, rate = 5600 },
 }
 
 local names = {
@@ -20,6 +21,8 @@ local names = {
 	{ "Solar Salamango", "Emperor Eggclipse", "Gold Guaczilla", "Duke Dango", "Plasma Panini", "Cosmic Cornado", "Saturn Sorbet" },
 	{ "Void Volcanoli", "Omega Omelord", "Nova Narwhal", "Black Hole Baguette", "Zenith Zappuccino", "Galactic Gelato", "Oracle Orzo" },
 	{ "Infinity Macaron", "Nebula Nectaroon", "Singularity Saffron" },
+	-- Append only: existing cargo IDs 1–45 and their discovery keys remain unchanged.
+	{ "Event Horizon Espresso", "Forbidden Focaccia", "Paradox Pistachio" },
 }
 
 Catalog.entries = {}
@@ -53,6 +56,7 @@ Catalog.mutations = {
 Catalog.mutationCount = #Catalog.mutations - 1
 Catalog.marketThemes = { 1, 2, 1, 3, 1, 4, 2, 1, 5, 2, 3, 6 }
 Catalog.cosmicChance = .12
+Catalog.secretChance = .018
 Catalog.zap = { range = 22, cooldown = 3, stun = 1.2, stealCooldown = 6 }
 
 function Catalog.rollMutation(random)
@@ -134,7 +138,7 @@ function Catalog.rate(cargo)
 end
 
 local uniqueNames = {}
-assert(#Catalog.entries == 45 and #Catalog.tiers == 7 and Catalog.mutationCount == 6, "Catalog size changed; review save IDs and index rewards")
+assert(#Catalog.entries == 48 and #Catalog.tiers == 8 and Catalog.mutationCount == 6, "Catalog size changed; review save IDs and index rewards")
 for _, entry in ipairs(Catalog.entries) do
 	assert(not uniqueNames[entry.name], "Duplicate brainrot name: " .. entry.name)
 	assert(Catalog.tiers[entry.tier] and entry.price > 0 and entry.rate > 0, "Invalid cargo economy")
