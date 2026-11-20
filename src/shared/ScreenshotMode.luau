@@ -3,6 +3,7 @@
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local Orbit = game:GetService("ReplicatedStorage"):WaitForChild("Orbit")
+local Remotes = require(Orbit:WaitForChild("Remotes"))
 local ScreenshotMode = {}
 local scenes = { Cover = true, Index = true, Raid = true, Upgrades = true, Reset = true }
 local handler
@@ -21,13 +22,13 @@ function ScreenshotMode.Select(scene, target)
 		assert(handler and target, "Start a Studio playtest with a player first")
 		handler(scene, target)
 	else
-		Orbit:WaitForChild("Action"):FireServer("Screenshot", scene)
+		Remotes.Get().Action:FireServer(Remotes.Actions.Screenshot, scene)
 	end
 end
 
 function ScreenshotMode.Listen(callback)
 	assert(RunService:IsClient(), "Listen from the client")
-	return Orbit:WaitForChild("Screenshot").OnClientEvent:Connect(function(scene)
+	return Remotes.Get().Screenshot.OnClientEvent:Connect(function(scene)
 		if RunService:IsStudio() and scenes[scene] then callback(scene) end
 	end)
 end

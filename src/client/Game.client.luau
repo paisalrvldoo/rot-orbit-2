@@ -6,9 +6,11 @@ local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 local orbit = ReplicatedStorage:WaitForChild("Orbit")
 local Catalog = require(orbit:WaitForChild("Catalog"))
+local Remotes = require(orbit:WaitForChild("Remotes"))
+local actions = Remotes.Actions
 local ScreenshotMode = require(orbit:WaitForChild("ScreenshotMode"))
 local HudLayout = require(script.Parent:WaitForChild("HudLayout"))
-local action = orbit:WaitForChild("Action")
+local action = Remotes.Get().Action
 local menuOpen = false
 
 local gui = Instance.new("ScreenGui")
@@ -97,7 +99,7 @@ local zap = panel("TextButton", skillBar, UDim2.fromOffset(100, 48), UDim2.fromO
 zap.Font = Enum.Font.GothamBold
 zap.TextSize = 16
 zap.TextColor3 = cyan
-zap.Activated:Connect(function() action:FireServer("Zap") end)
+zap.Activated:Connect(function() action:FireServer(actions.Zap) end)
 local blink = panel("TextButton", skillBar, UDim2.fromOffset(100, 48), UDim2.fromOffset(0, 56), Vector2.zero)
 local sprint = panel("TextButton", skillBar, UDim2.fromOffset(100, 48), UDim2.fromOffset(0, 112), Vector2.zero)
 for name, control in pairs({ Blink = blink, Sprint = sprint }) do
@@ -109,11 +111,11 @@ end
 UserInputService.InputBegan:Connect(function(input, processed)
 	if menuOpen then return end
 	if not processed and (input.KeyCode == Enum.KeyCode.Q or input.KeyCode == Enum.KeyCode.ButtonY) then
-		action:FireServer("Zap")
+		action:FireServer(actions.Zap)
 	elseif not processed and (input.KeyCode == Enum.KeyCode.F or input.KeyCode == Enum.KeyCode.ButtonB) then
-		action:FireServer("Blink")
+		action:FireServer(actions.Blink)
 	elseif not processed and (input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.ButtonL3) then
-		action:FireServer("Sprint")
+		action:FireServer(actions.Sprint)
 	end
 end)
 
@@ -361,7 +363,7 @@ refreshMenu = function()
 		line("Each level adds 25% base dock income.", white)
 		if cost then
 			menuRow("UPGRADE   $" .. cost).Activated:Connect(function()
-				action:FireServer("Upgrade")
+				action:FireServer(actions.Upgrade)
 			end)
 		end
 		for _, kind in ipairs({ "Speed", "Shield" }) do
@@ -371,7 +373,7 @@ refreshMenu = function()
 			line(definition.name .. "  /  " .. utilityLevel .. " of " .. #definition.costs, gold)
 			line(definition.detail, white)
 			if price then
-				menuRow("UPGRADE " .. kind:upper() .. "  $" .. number(price)).Activated:Connect(function() action:FireServer("Upgrade", kind) end)
+				menuRow("UPGRADE " .. kind:upper() .. "  $" .. number(price)).Activated:Connect(function() action:FireServer(actions.Upgrade, kind) end)
 			end
 		end
 		line("Shield protects for " .. (player:GetAttribute("LockDuration") or 32) .. "s. Rebirth 2 unlocks longer Blink.", cyan, 48)
@@ -379,21 +381,21 @@ refreshMenu = function()
 		line("Keep your best cargo and all discoveries. Reset other cargo, credits and upgrades for +25% base income and +2s shield.", white, 72)
 		if rebirths < Catalog.rebirthMax then
 			line("Requires a docked " .. Catalog.tiers[Catalog.rebirthTier(rebirths)].name .. " or better.", cyan)
-			confirmButton("REBIRTH   $" .. number(Catalog.rebirthCost(rebirths)), "CONFIRM REBIRTH", "Rebirth")
+			confirmButton("REBIRTH   $" .. number(Catalog.rebirthCost(rebirths)), "CONFIRM REBIRTH", actions.Rebirth)
 		else
 			line("ORBIT ACE  •  All 10 rebirths complete", gold)
 		end
 		line("Free a slot by scrapping your lowest earner for half its market price.", white, 43)
-		confirmButton("RECYCLE WEAKEST CARGO", "CONFIRM RECYCLE", "Recycle")
+		confirmButton("RECYCLE WEAKEST CARGO", "CONFIRM RECYCLE", actions.Recycle)
 	elseif active == "Contracts" then
 		local contract = Catalog.contracts[player:GetAttribute("Contract") or 1]
 		local progress = player:GetAttribute("ContractProgress") or 0
 		line(contract.title .. "   /   $" .. contract.reward .. " reward", gold)
 		line(contract.detail .. "   •   " .. progress .. " / " .. contract.goal, white)
 		if progress >= contract.goal then
-			menuRow("CLAIM REWARD").Activated:Connect(function() action:FireServer("Contract") end)
+			menuRow("CLAIM REWARD").Activated:Connect(function() action:FireServer(actions.Contract) end)
 		else
-			menuRow("SKIP CONTRACT  $90").Activated:Connect(function() action:FireServer("ContractSkip") end)
+			menuRow("SKIP CONTRACT  $90").Activated:Connect(function() action:FireServer(actions.ContractSkip) end)
 		end
 		line("Next: " .. Catalog.contracts[(player:GetAttribute("Contract") or 1) % #Catalog.contracts + 1].title, cyan)
 		line("Contracts cycle through cargo, credits, raids, mutations and rebirths. Claim each finished reward here.", white, 72)
@@ -402,13 +404,13 @@ refreshMenu = function()
 		line("Play Solo or join a squad", gold)
 		line("Squadmates cannot steal or zap each other's cargo. Server scores: +2 new discovery, +5 shield defence, +10 gremlin, +30 boss. Nearby squadmates earn $20 assists.", white, 100)
 		line("Your defence score: " .. (player:GetAttribute("PersonalScore") or 0), gold)
-		menuRow(current == 0 and "SOLO  •  ACTIVE" or "PLAY SOLO").Activated:Connect(function() action:FireServer("Crew", 0) end)
+		menuRow(current == 0 and "SOLO  •  ACTIVE" or "PLAY SOLO").Activated:Connect(function() action:FireServer(actions.Crew, 0) end)
 		for id, crew in ipairs(Catalog.crews) do
 			local points = workspace:GetAttribute("CrewScore" .. id) or 0
 			local members = workspace:GetAttribute("CrewMembers" .. id) or 0
 			local row = menuRow((current == id and "✓ " or "JOIN ") .. crew.name .. "  •  " .. points .. " pts / " .. members)
 			row.TextColor3 = crew.color
-			row.Activated:Connect(function() action:FireServer("Crew", id) end)
+			row.Activated:Connect(function() action:FireServer(actions.Crew, id) end)
 		end
 		line("Crew changes recharge for 30s. Finish raids and recover missing cargo first.", white, 50)
 	end

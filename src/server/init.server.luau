@@ -3,6 +3,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Orbit = ReplicatedStorage:WaitForChild("Orbit")
 local Catalog = require(Orbit:WaitForChild("Catalog"))
+local Remotes = require(Orbit:WaitForChild("Remotes"))
+local network = Remotes.Get()
+local actions = Remotes.Actions
 local World = require(script:WaitForChild("World"))
 local CrewService = require(script:WaitForChild("CrewService"))
 local DataService = require(script:WaitForChild("DataService"))
@@ -22,12 +25,8 @@ local raid
 local raidCount = 0
 local finishRaid
 local serverClosing = false
-local action = Instance.new("RemoteEvent")
-action.Name = "Action"
-action.Parent = Orbit
-local screenshot = Instance.new("RemoteEvent")
-screenshot.Name = "Screenshot"
-screenshot.Parent = Orbit
+local action = network.Action
+local screenshot = network.Screenshot
 
 if RunService:IsStudio() then
 	local previews = {}
@@ -589,7 +588,7 @@ local function moveRaid(delta, now)
 end
 
 action.OnServerEvent:Connect(function(player, request, value)
-	if request == "Screenshot" then
+	if request == actions.Screenshot then
 		if RunService:IsStudio() and (value == "Cover" or value == "Index" or value == "Raid" or value == "Upgrades" or value == "Reset") then
 			ScreenshotMode.Select(value, player)
 		end
@@ -600,23 +599,23 @@ action.OnServerEvent:Connect(function(player, request, value)
 	local now = workspace:GetServerTimeNow()
 	if now < (state.actionReady or 0) then return end
 	state.actionReady = now + .12
-	if request == "Blink" or request == "Sprint" then
+	if request == actions.Blink or request == actions.Sprint then
 		local success, words = SkillService.Use(player, state, request)
-		if success then World.flash(root.Position, World.cyan, request == "Blink" and 5 or 3)
+		if success then World.flash(root.Position, World.cyan, request == actions.Blink and 5 or 3)
 		elseif words then message(player, words) end
 		return
 	end
-	if request ~= "Zap" then
+	if request ~= actions.Zap then
 		if now < (state.menuReady or 0) then return end
 		state.menuReady = now + .3
-		if request == "Crew" then
+		if request == actions.Crew then
 			local _, words = crews:Select(state, value, raid ~= nil)
 			message(player, words)
-		elseif request == "Upgrade" then
+		elseif request == actions.Upgrade then
 			local _, words = EconomyService.Upgrade(state, value)
 			SkillService.Update(player, state)
 			message(player, words)
-		elseif request == "Rebirth" then
+		elseif request == actions.Rebirth then
 			local best, reason = EconomyService.RebirthCheck(state)
 			if not best then message(player, reason) return end
 			local kept = best.cargo
@@ -634,21 +633,21 @@ action.OnServerEvent:Connect(function(player, request, value)
 			SkillService.Update(player, state)
 			World.flash(state.bay.bank.Position, World.gold, 12)
 			message(player, "Rebirth complete. Best cargo kept, +25% base income, +2s shield" .. (state.rebirths == 2 and ", longer Blink!" or "."))
-		elseif request == "Contract" then
+		elseif request == actions.Contract then
 			local contract = Catalog.contracts[state.contract]
 			if state.progress < contract.goal then message(player, "Contract is still in progress.") return end
 			state.cash += contract.reward
 			state.contract = state.contract % #Catalog.contracts + 1
 			state.progress = 0
 			message(player, "Contract complete  /  +$" .. contract.reward)
-		elseif request == "ContractSkip" then
+		elseif request == actions.ContractSkip then
 			if state.progress >= Catalog.contracts[state.contract].goal then message(player, "Claim this completed contract first.") return end
 			if state.cash < 90 then message(player, "Need $90 to skip a contract.") return end
 			state.cash -= 90
 			state.contract = state.contract % #Catalog.contracts + 1
 			state.progress = 0
 			message(player, "New contract  /  " .. Catalog.contracts[state.contract].title)
-		elseif request == "Recycle" then
+		elseif request == actions.Recycle then
 			local weakest
 			for _, slot in ipairs(state.bay.slots) do
 				if slot.cargo and (not weakest or Catalog.rate(slot.cargo) < Catalog.rate(weakest.cargo)) then
@@ -667,7 +666,7 @@ action.OnServerEvent:Connect(function(player, request, value)
 			return
 		end
 		sync(player, state)
-		if request == "Rebirth" then task.spawn(function() data:Save(player, false) end) end
+		if request == actions.Rebirth then task.spawn(function() data:Save(player, false) end) end
 		return
 	end
 	if now < state.zapReady then return end
