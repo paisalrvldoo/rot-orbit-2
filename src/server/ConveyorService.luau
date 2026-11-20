@@ -26,18 +26,21 @@ function ConveyorService:Roll()
 	if self.arrivals % 3 == 0 then
 		return self:Cargo(1, true, self.random:NextInteger(1, 4))
 	end
-	if self.arrivals % 4 == 1 then
-		local required
-		for _, state in pairs(self.profiles) do
-			if not state.loading and not state.closing and state.rebirths >= 3 and state.rebirths < Catalog.rebirthMax then
+	local required, progress = nil, 0
+	for _, state in pairs(self.profiles) do
+		if not state.loading and not state.closing then
+			progress = math.max(progress, (state.level + 2 * state.rebirths) / (#Catalog.upgrades + 2 * Catalog.rebirthMax))
+			if self.arrivals % 4 == 1 and state.rebirths >= 3 and state.rebirths < Catalog.rebirthMax then
 				required = math.max(required or 0, Catalog.rebirthTier(state.rebirths))
 			end
 		end
-		if required then return self:Cargo(required, false) end
 	end
+	if required then return self:Cargo(required, false) end
+	-- At max progression, shift 14 points from low tiers toward Rare and above.
+	local shift = { -8, -6, 2, 3, 3.5, 3, 2, .5 }
 	local roll = self.random:NextNumber(0, 100)
 	for tier, weight in ipairs(config.weights) do
-		roll -= weight
+		roll -= weight + progress * shift[tier]
 		if roll < 0 then return self:Cargo(tier, false) end
 	end
 	return self:Cargo(#config.weights, false)

@@ -11,6 +11,18 @@ local function integer(value, fallback, maximum)
 	return math.clamp(math.floor(value), 0, maximum)
 end
 
+local function offlineReward(saved, profile, now)
+	local config = Catalog.offline
+	local elapsed = math.min(now - integer(saved.savedAt, now, now), config.maximumSeconds)
+	if elapsed < config.minimumSeconds then return 0 end
+	local rate = 0
+	for _, cargo in ipairs(profile.inventory) do
+		rate += Catalog.rate(cargo)
+	end
+	rate = math.floor(rate * Catalog.incomeFactor(profile))
+	return math.min(MAX_CASH - profile.cash, math.floor(rate * elapsed * config.share))
+end
+
 function DataService.Decode(saved)
 	saved = type(saved) == "table" and saved or {}
 	local contract = math.max(1, integer(saved.contract, 1, #Catalog.contracts))
@@ -88,11 +100,11 @@ end
 function DataService:Load(player, state)
 	local session = { token = HttpService:GenerateGUID(false), key = "player_" .. player.UserId, state = state }
 	self.sessions[player] = session
-	local blocked
+	local blocked, offline = nil, 0
 	local ok, saved = pcall(function()
 		if not self.store then error("DataStore unavailable") end
 		return self.store:UpdateAsync(session.key, function(previous)
-			blocked = nil
+			blocked, offline = nil, 0
 			previous = type(previous) == "table" and previous or { version = VERSION }
 			if type(previous.version) == "number" and previous.version > VERSION then
 				blocked = "Your progress needs a newer server. Please rejoin."; return nil
@@ -102,7 +114,13 @@ function DataService:Load(player, state)
 				and type(lease.expires) == "number" and lease.expires > os.time() then
 				blocked = "Your bay is saving in another server. Rejoin shortly."; return nil
 			end
-			previous.lease = { token = session.token, expires = os.time() + LEASE_SECONDS }
+			local now = os.time()
+			local profile = DataService.Decode(previous)
+			offline = offlineReward(previous, profile, now)
+			-- Redeem the saved interval in the same write as the lease.
+			previous.cash = profile.cash + offline
+			previous.savedAt = nil
+			previous.lease = { token = session.token, expires = now + LEASE_SECONDS }
 			return previous
 		end)
 	end)
@@ -110,7 +128,7 @@ function DataService:Load(player, state)
 	if ok and type(saved) == "table" then
 		session.writable = true
 		state.saveStatus = "Saved"
-		return DataService.Decode(saved)
+		return DataService.Decode(saved), nil, offline
 	end
 	state.saveStatus = "Session only"
 	warn("ROT ORBIT: saving unavailable; this session will not overwrite stored progress.")

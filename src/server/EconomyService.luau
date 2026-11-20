@@ -12,13 +12,14 @@ function EconomyService.Rate(state, incomeMultiplier)
 	for _, slot in ipairs(state.bay.slots) do
 		if slot.cargo then rate += Catalog.rate(slot.cargo) end
 	end
-	return math.floor(rate * (1 + .25 * state.level + .25 * state.rebirths) * (incomeMultiplier or 1))
+	return math.floor(rate * Catalog.incomeFactor(state) * (incomeMultiplier or 1))
 end
 
 function EconomyService.FreeSlot(state)
 	for _, slot in ipairs(state.bay.slots) do
 		if not slot.cargo and not slot.reserved then return slot end
 	end
+	return nil
 end
 
 function EconomyService.Discover(state, cargo)

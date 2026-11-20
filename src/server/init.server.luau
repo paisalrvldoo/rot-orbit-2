@@ -76,6 +76,8 @@ local function sync(player, state, rate)
 	player:SetAttribute("SlotsUpgrade", state.slotsLevel or 0)
 	player:SetAttribute("IndexMilestone", state.milestone or 0)
 	player:SetAttribute("Rebirths", state.rebirths)
+	state.cashStat.Value = state.cash
+	state.rebirthStat.Value = state.rebirths
 	ContractService.Publish(player, state)
 	player:SetAttribute("CrewId", state.crew or 0)
 	player:SetAttribute("CrewReady", state.crewReady or 0)
@@ -191,6 +193,14 @@ local function assign(player)
 	local state = DataService.Decode(nil)
 	state.bay, state.loading, state.score = bay, true, 0
 	state.lockedUntil, state.lockReady, state.zapReady = 0, 0, 0
+	local leaderstats = Instance.new("Folder")
+	leaderstats.Name = "leaderstats"
+	local cashStat = Instance.new("IntValue")
+	cashStat.Name, cashStat.Value, cashStat.Parent = "Cash", state.cash, leaderstats
+	local rebirthStat = Instance.new("IntValue")
+	rebirthStat.Name, rebirthStat.Value, rebirthStat.Parent = "Rebirths", state.rebirths, leaderstats
+	state.cashStat, state.rebirthStat = cashStat, rebirthStat
+	leaderstats.Parent = player
 	profiles[player] = state
 	crews:Refresh()
 	player:SetAttribute("Index", "")
@@ -203,7 +213,7 @@ local function assign(player)
 	if root then player.Character:PivotTo(bay.spawn) end
 	sync(player, state)
 	task.spawn(function()
-		local saved, reason = data:Load(player, state)
+		local saved, reason, offline = data:Load(player, state)
 		if not saved then
 			state.loading = false
 			if player.Parent then player:Kick(reason) end
@@ -232,7 +242,11 @@ local function assign(player)
 		SkillService.Update(player, state)
 		crews:Refresh()
 		sync(player, state)
-		message(player, state.saveStatus == "Saved" and "Bay ready. Credits, cargo and discoveries saved." or "Saving unavailable. This session is playable; progress is session only.")
+		if offline and offline > 0 then
+			message(player, "Welcome back. Your docks earned $" .. offline .. " while you were away.")
+		else
+			message(player, state.saveStatus == "Saved" and "Bay ready. Credits, cargo and discoveries saved." or "Saving unavailable. This session is playable; progress is session only.")
+		end
 	end)
 	return true
 end

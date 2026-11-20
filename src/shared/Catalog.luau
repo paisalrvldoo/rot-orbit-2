@@ -1,6 +1,7 @@
 local Catalog = {}
 Catalog.maxCash = 1e12
 Catalog.autosaveSeconds = 50
+Catalog.offline = { minimumSeconds = 60, maximumSeconds = 7200, share = .25 }
 
 Catalog.tiers = {
 	{ name = "Common", color = Color3.fromRGB(94, 240, 167), price = 50, rate = 4 },
@@ -175,6 +176,10 @@ end
 
 function Catalog.rate(cargo)
 	return Catalog.entries[cargo.id].rate * Catalog.mutations[cargo.mutation].factor
+end
+
+function Catalog.incomeFactor(state)
+	return 1 + .25 * state.level + .25 * state.rebirths
 end
 
 local uniqueNames = {}
