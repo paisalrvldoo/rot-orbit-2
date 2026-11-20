@@ -366,7 +366,7 @@ refreshMenu = function()
 				action:FireServer(actions.Upgrade)
 			end)
 		end
-		for _, kind in ipairs({ "Speed", "Shield" }) do
+		for _, kind in ipairs({ "Speed", "Carry", "Shield", "Slots" }) do
 			local definition = Catalog.utilityUpgrades[kind]
 			local utilityLevel = player:GetAttribute(kind .. "Upgrade") or 0
 			local price = definition.costs[utilityLevel + 1]
@@ -378,8 +378,9 @@ refreshMenu = function()
 		end
 		line("Shield protects for " .. (player:GetAttribute("LockDuration") or 32) .. "s. Rebirth 2 unlocks longer Blink.", cyan, 48)
 		line("Rebirths  /  " .. rebirths, gold)
-		line("Keep your best cargo and all discoveries. Reset other cargo, credits and upgrades for +25% base income and +2s shield.", white, 72)
+		line("Keep your best cargo and discoveries. Reset credits and upgrades for +25% base income, +2s shield and bonus docks.", white, 72)
 		if rebirths < Catalog.rebirthMax then
+			line("Permanent bonus docks after rebirth: " .. Catalog.bonusSlots(rebirths + 1), cyan)
 			line("Requires a docked " .. Catalog.tiers[Catalog.rebirthTier(rebirths)].name .. " or better.", cyan)
 			confirmButton("REBIRTH   $" .. number(Catalog.rebirthCost(rebirths)), "CONFIRM REBIRTH", actions.Rebirth)
 		else
@@ -398,11 +399,20 @@ refreshMenu = function()
 			menuRow("SKIP CONTRACT  $90").Activated:Connect(function() action:FireServer(actions.ContractSkip) end)
 		end
 		line("Next: " .. Catalog.contracts[(player:GetAttribute("Contract") or 1) % #Catalog.contracts + 1].title, cyan)
-		line("Contracts cycle through cargo, credits, raids, mutations and rebirths. Claim each finished reward here.", white, 72)
+		for id, track in ipairs(Catalog.contractTracks) do
+			local stage = player:GetAttribute("ContractTrack" .. id) or 1
+			local goal = track.stages[stage]
+			local count = player:GetAttribute("ContractTrackProgress" .. id) or 0
+			line(track.title .. "  /  " .. stage .. " of " .. #track.stages .. "  /  $" .. number(goal.reward), gold)
+			line(goal.title .. "  /  " .. count .. " of " .. goal.goal, white)
+			if count >= goal.goal then
+				menuRow("CLAIM " .. track.title:upper()).Activated:Connect(function() action:FireServer(actions.Contract, id) end)
+			end
+		end
 	elseif active == "Crews" then
 		local current = player:GetAttribute("CrewId") or 0
 		line("Play Solo or join a squad", gold)
-		line("Squadmates cannot steal or zap each other's cargo. Server scores: +2 new discovery, +5 shield defence, +10 gremlin, +30 boss. Nearby squadmates earn $20 assists.", white, 100)
+		line("Squadmates protect and recover each other's cargo. Nearby squadmates earn defence assists.", white, 100)
 		line("Your defence score: " .. (player:GetAttribute("PersonalScore") or 0), gold)
 		menuRow(current == 0 and "SOLO  •  ACTIVE" or "PLAY SOLO").Activated:Connect(function() action:FireServer(actions.Crew, 0) end)
 		for id, crew in ipairs(Catalog.crews) do
@@ -475,8 +485,12 @@ menu:GetPropertyChangedSignal("Visible"):Connect(function()
 	skillBar.Visible = not menu.Visible
 	menuButton.Visible = not menu.Visible
 end)
-for _, key in ipairs({ "Index", "Upgrade", "SpeedUpgrade", "ShieldUpgrade", "Rebirths", "Contract", "ContractProgress", "CrewId", "PersonalScore", "SaveStatus", "IndexMilestone", "Cash" }) do
+for _, key in ipairs({ "Index", "Upgrade", "SpeedUpgrade", "CarryUpgrade", "ShieldUpgrade", "SlotsUpgrade", "Rebirths", "Contract", "ContractProgress", "CrewId", "PersonalScore", "SaveStatus", "IndexMilestone", "Cash" }) do
 	player:GetAttributeChangedSignal(key):Connect(refreshMenu)
+end
+for id in ipairs(Catalog.contractTracks) do
+	player:GetAttributeChangedSignal("ContractTrack" .. id):Connect(refreshMenu)
+	player:GetAttributeChangedSignal("ContractTrackProgress" .. id):Connect(refreshMenu)
 end
 player:GetAttributeChangedSignal("Loading"):Connect(function()
 	for prompt in pairs(prompts) do refreshPrompt(prompt) end

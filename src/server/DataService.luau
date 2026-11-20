@@ -11,19 +11,27 @@ local function integer(value, fallback, maximum)
 	return math.clamp(math.floor(value), 0, maximum)
 end
 
-function DataService.Decode(saved, slots)
+function DataService.Decode(saved)
 	saved = type(saved) == "table" and saved or {}
 	local contract = math.max(1, integer(saved.contract, 1, #Catalog.contracts))
 	local result = {
 		cash = integer(saved.cash, 90, MAX_CASH), bank = integer(saved.bank, 0, MAX_CASH),
 		level = integer(saved.level, 0, #Catalog.upgrades), rebirths = integer(saved.rebirths, 0, Catalog.rebirthMax),
 		speedLevel = integer(saved.speedLevel, 0, #Catalog.utilityUpgrades.Speed.costs),
+		carryLevel = integer(saved.carryLevel, integer(saved.speedLevel, 0, #Catalog.utilityUpgrades.Carry.costs), #Catalog.utilityUpgrades.Carry.costs),
 		shieldLevel = integer(saved.shieldLevel, 0, #Catalog.utilityUpgrades.Shield.costs),
+		slotsLevel = integer(saved.slotsLevel, 0, #Catalog.utilityUpgrades.Slots.costs),
 		milestone = integer(saved.milestone, 0, #Catalog.indexMilestones),
 		guide = math.max(1, integer(saved.guide, 1, 4)), crew = integer(saved.crew, 0, #Catalog.crews),
 		contract = contract, progress = integer(saved.progress, 0, Catalog.contracts[contract].goal),
-		index = {}, inventory = {},
+		index = {}, inventory = {}, tracks = {},
 	}
+	for id, track in ipairs(Catalog.contractTracks) do
+		local record = type(saved.tracks) == "table" and saved.tracks[id]
+		record = type(record) == "table" and record or {}
+		local stage = math.max(1, integer(record.stage, 1, #track.stages))
+		result.tracks[id] = { stage = stage, progress = integer(record.progress, 0, track.stages[stage].goal) }
+	end
 	if type(saved.index) == "table" then
 		for _, key in ipairs(saved.index) do
 			if type(key) == "number" and key % 1 == 0 and key >= 1 and key <= #Catalog.entries * #Catalog.mutations then
@@ -32,7 +40,7 @@ function DataService.Decode(saved, slots)
 		end
 	end
 	if type(saved.inventory) == "table" then
-		for position = 1, math.min(#saved.inventory, slots) do
+		for position = 1, math.min(#saved.inventory, Catalog.slotCount(result)) do
 			local cargo = saved.inventory[position]
 			if type(cargo) == "table" and type(cargo.id) == "number" and Catalog.entries[cargo.id]
 				and type(cargo.mutation) == "number" and Catalog.mutations[cargo.mutation] then
@@ -49,8 +57,10 @@ function DataService.Encode(state)
 		version = VERSION, cash = state.cash, bank = state.bank, level = state.level,
 		rebirths = state.rebirths, guide = state.guide, crew = state.crew,
 		speedLevel = state.speedLevel or 0, shieldLevel = state.shieldLevel or 0, milestone = state.milestone or 0,
-		contract = state.contract, progress = state.progress, index = {}, inventory = {},
+		carryLevel = state.carryLevel or 0, slotsLevel = state.slotsLevel or 0,
+		contract = state.contract, progress = state.progress, index = {}, inventory = {}, tracks = {},
 	}
+	for id, track in ipairs(state.tracks) do saved.tracks[id] = table.clone(track) end
 	for key in pairs(state.index) do table.insert(saved.index, key) end
 	table.sort(saved.index)
 	for _, slot in ipairs(state.bay.slots) do
@@ -100,11 +110,11 @@ function DataService:Load(player, state)
 	if ok and type(saved) == "table" then
 		session.writable = true
 		state.saveStatus = "Saved"
-		return DataService.Decode(saved, #state.bay.slots)
+		return DataService.Decode(saved)
 	end
 	state.saveStatus = "Session only"
 	warn("ROT ORBIT: saving unavailable; this session will not overwrite stored progress.")
-	return DataService.Decode(nil, #state.bay.slots)
+	return DataService.Decode(nil)
 end
 
 function DataService:Save(player, release)

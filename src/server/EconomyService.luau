@@ -21,13 +21,6 @@ function EconomyService.FreeSlot(state)
 	end
 end
 
-function EconomyService.Activity(state, kind, cargo, amount)
-	local contract = Catalog.contracts[state.contract]
-	if contract.kind ~= kind then return end
-	if contract.minTier and (not cargo or Catalog.entries[cargo.id].tier < contract.minTier) then return end
-	state.progress = math.min(contract.goal, state.progress + (amount or 1))
-end
-
 function EconomyService.Discover(state, cargo)
 	local key = Catalog.discoveryKey(cargo)
 	if state.index[key] then return false, 0 end
@@ -44,6 +37,7 @@ function EconomyService.Discover(state, cargo)
 end
 
 function EconomyService.Upgrade(state, kind)
+	if kind ~= nil and type(kind) ~= "string" then return false, "Unknown upgrade." end
 	local definition = kind and Catalog.utilityUpgrades[kind]
 	if kind and kind ~= "Income" and not definition then return false, "Unknown upgrade." end
 	local key, costs = definition and definition.key or "level", definition and definition.costs or Catalog.upgrades

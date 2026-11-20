@@ -16,6 +16,8 @@ local MeteorSolarEvents = require(script:WaitForChild("MeteorSolarEvents"))
 local RivalService = require(script:WaitForChild("RivalService"))
 local StealService = require(script:WaitForChild("StealService"))
 local GremlinRaid = require(script:WaitForChild("GremlinRaid"))
+local ContractService = require(script:WaitForChild("ContractService"))
+local UpgradeRebirthService = require(script:WaitForChild("UpgradeRebirthService"))
 local GuideService = require(script:WaitForChild("GuideService"))
 local ConveyorService = require(script:WaitForChild("ConveyorService"))
 local ScreenshotService = require(script:WaitForChild("ScreenshotService"))
@@ -30,6 +32,7 @@ local waiting = {}
 local serverClosing = false
 local action = network.Action
 local screenshotService
+local upgrades
 
 local function message(player, words)
 	player:SetAttribute("OrbitMessage", words)
@@ -68,11 +71,12 @@ local function sync(player, state)
 	player:SetAttribute("LockDuration", Catalog.lockDuration(state))
 	player:SetAttribute("Upgrade", state.level)
 	player:SetAttribute("SpeedUpgrade", state.speedLevel or 0)
+	player:SetAttribute("CarryUpgrade", state.carryLevel or 0)
 	player:SetAttribute("ShieldUpgrade", state.shieldLevel or 0)
+	player:SetAttribute("SlotsUpgrade", state.slotsLevel or 0)
 	player:SetAttribute("IndexMilestone", state.milestone or 0)
 	player:SetAttribute("Rebirths", state.rebirths)
-	player:SetAttribute("Contract", state.contract)
-	player:SetAttribute("ContractProgress", state.progress)
+	ContractService.Publish(player, state)
 	player:SetAttribute("CrewId", state.crew or 0)
 	player:SetAttribute("CrewReady", state.crewReady or 0)
 	player:SetAttribute("PersonalScore", state.score or 0)
@@ -156,7 +160,7 @@ local raids = GremlinRaid.new({ world = World, profiles = profiles, bays = bays,
 local meteorMutation = 2
 local weather = MeteorSolarEvents.new({
 	world = World, profiles = profiles, random = rng, network = network,
-	rootOf = rootOf, message = message, announce = announce, activity = EconomyService.Activity,
+	rootOf = rootOf, message = message, announce = announce, activity = ContractService.Activity,
 	refresh = function()
 		for player, state in pairs(profiles) do if not state.loading and not state.closing then sync(player, state) end end
 	end,
@@ -182,10 +186,9 @@ local function assign(player)
 	if not bay then return false end
 	rivals:Clear(bay)
 	bay.owner = player
-	local state = {
-		bay = bay, cash = 90, bank = 0, guide = 1, lockedUntil = 0, lockReady = 0, zapReady = 0,
-		level = 0, rebirths = 0, contract = 1, progress = 0, index = {}, crew = 0, score = 0, loading = true,
-	}
+	local state = DataService.Decode(nil)
+	state.bay, state.loading, state.score = bay, true, 0
+	state.lockedUntil, state.lockReady, state.zapReady = 0, 0, 0
 	profiles[player] = state
 	crews:Refresh()
 	player:SetAttribute("Index", "")
@@ -209,7 +212,10 @@ local function assign(player)
 			data:Abandon(player)
 			return
 		end
-		for _, key in ipairs({ "cash", "bank", "level", "rebirths", "guide", "crew", "contract", "progress", "index", "speedLevel", "shieldLevel", "milestone" }) do state[key] = saved[key] end
+		for key, value in pairs(saved) do
+			if key ~= "inventory" then state[key] = value end
+		end
+		upgrades:Resize(bay, Catalog.slotCount(state))
 		for position, record in ipairs(saved.inventory) do
 			local cargo = { id = record.id, mutation = record.mutation }
 			cargo.model = World.figure(cargo, World.root)
@@ -229,6 +235,55 @@ local function assign(player)
 	return true
 end
 
+local function bindSlot(bay, slot)
+	local i = bay.number
+	local prompt = World.prompt(slot.pad, "Dock Cargo", "Bay " .. i)
+	slot.prompt = prompt
+	slot.bay = bay
+	prompt:SetAttribute("OrbitPrompt", "Slot")
+	prompt:SetAttribute("Owner", bay.owner and bay.owner.UserId or 0)
+	updateSlot(slot)
+	prompt.Triggered:Connect(function(player)
+		if World.root:GetAttribute("ScreenshotFrozen") then return end
+		local state = profiles[player]
+		if not state or state.loading or state.closing or not near(player, slot.pad.Position, 10) then return end
+		if state.bay ~= bay then
+			steals:Take(player, state, slot)
+			return
+		end
+		if not state.carry or slot.cargo or slot.reserved then return end
+		local cargo = state.carry
+		local source = clearSource(cargo)
+		if cargo.stolen then
+			ContractService.Activity(state, "Steal", cargo)
+			cargo.stolen = nil
+		end
+		state.carry = nil
+		SkillService.Update(player, state)
+		dockCargo(slot, cargo)
+		local discovered, bonus = EconomyService.Discover(state, cargo)
+		if discovered then
+			crews:Award(state, 2)
+			local keys = {}
+			for found in pairs(state.index) do table.insert(keys, found) end
+			player:SetAttribute("Index", table.concat(keys, ","))
+		end
+		ContractService.Activity(state, "Dock", cargo)
+		if cargo.mutation > 1 then ContractService.Activity(state, "Mutation", cargo) end
+		state.guide = math.max(state.guide, 3)
+		sync(player, state)
+		message(player, Catalog.name(cargo) .. " docked  /  +" .. Catalog.rate(cargo) .. "/s" .. (bonus > 0 and ("  •  Index bonus +$" .. bonus) or ""))
+		if source and source.bay.owner and profiles[source.bay.owner] then
+			sync(source.bay.owner, profiles[source.bay.owner])
+			message(source.bay.owner, "The thief docked your cargo. Keep your bay sealed during the next run.")
+			local owner = source.bay.owner
+			task.spawn(function() data:Save(owner, false) end)
+		end
+	end)
+end
+
+upgrades = UpgradeRebirthService.new(World, bindSlot)
+
 for i, bay in ipairs(bays) do
 	bay.number = i
 	local collect = World.prompt(bay.bank, "Collect Credits", "Bay " .. i)
@@ -242,7 +297,7 @@ for i, bay in ipairs(bays) do
 		local value = state.bank
 		state.cash += value
 		state.bank = 0
-		EconomyService.Activity(state, "Collect", nil, value)
+		ContractService.Activity(state, "Collect", nil, value)
 		state.guide = math.max(state.guide, 4)
 		sync(player, state)
 		message(player, "+ " .. value .. " credits collected")
@@ -268,50 +323,7 @@ for i, bay in ipairs(bays) do
 		crews:Refresh()
 		message(player, "Bay sealed for " .. duration .. " seconds. It repels inbound raids.")
 	end)
-	for _, slot in ipairs(bay.slots) do
-		local prompt = World.prompt(slot.pad, "Dock Cargo", "Bay " .. i)
-		slot.prompt = prompt
-		slot.bay = bay
-		prompt:SetAttribute("OrbitPrompt", "Slot")
-		updateSlot(slot)
-		prompt.Triggered:Connect(function(player)
-			if World.root:GetAttribute("ScreenshotFrozen") then return end
-			local state = profiles[player]
-			if not state or state.loading or state.closing or not near(player, slot.pad.Position, 10) then return end
-			if state.bay ~= bay then
-				steals:Take(player, state, slot)
-				return
-			end
-			if not state.carry or slot.cargo or slot.reserved then return end
-			local cargo = state.carry
-			local source = clearSource(cargo)
-			if cargo.stolen then
-				EconomyService.Activity(state, "Steal", cargo)
-				cargo.stolen = nil
-			end
-			state.carry = nil
-			SkillService.Update(player, state)
-			dockCargo(slot, cargo)
-			local discovered, bonus = EconomyService.Discover(state, cargo)
-			if discovered then
-				crews:Award(state, 2)
-				local keys = {}
-				for found in pairs(state.index) do table.insert(keys, found) end
-				player:SetAttribute("Index", table.concat(keys, ","))
-			end
-			EconomyService.Activity(state, "Dock", cargo)
-			if cargo.mutation > 1 then EconomyService.Activity(state, "Mutation", cargo) end
-			state.guide = math.max(state.guide, 3)
-			sync(player, state)
-			message(player, Catalog.name(cargo) .. " docked  /  +" .. Catalog.rate(cargo) .. "/s" .. (bonus > 0 and ("  •  Index bonus +$" .. bonus) or ""))
-			if source and source.bay.owner and profiles[source.bay.owner] then
-				sync(source.bay.owner, profiles[source.bay.owner])
-				message(source.bay.owner, "The thief docked your cargo. Keep your bay sealed during the next run.")
-				local owner = source.bay.owner
-				task.spawn(function() data:Save(owner, false) end)
-			end
-		end)
-	end
+	for _, slot in ipairs(bay.slots) do bindSlot(bay, slot) end
 end
 
 rivals:Restock()
@@ -378,6 +390,7 @@ end
 if RunService:IsStudio() then
 	screenshotService = ScreenshotService.new({ world = World, profiles = profiles, weather = weather,
 		network = network, rootOf = rootOf, sync = sync, updateSlot = updateSlot, dockCargo = dockCargo,
+		resize = function(bay, count) upgrades:Resize(bay, count) end,
 		settle = settleCargo, finishRaid = function() raids:Clear() end })
 end
 
@@ -405,6 +418,7 @@ Players.PlayerRemoving:Connect(function(player)
 		updateSlot(slot)
 	end
 	bay.owner = nil
+	upgrades:Resize(bay, Catalog.baseSlots)
 	bay.header:SetAttribute("LockedUntil", 0)
 	bay.collectPrompt:SetAttribute("Owner", 0)
 	bay.lockPrompt:SetAttribute("Owner", 0)
@@ -468,6 +482,7 @@ local function stock(offer, first, expiresAt)
 		if state.cash < cost then message(player, "Need $" .. cost .. " for this brainrot.") return end
 		if not conveyor:Claim(offer) then return end
 		state.cash -= cost
+		ContractService.Activity(state, "Buy", cargo)
 		label.Parent:Destroy()
 		prompt:Destroy()
 		cargo.model:SetAttribute("OfferExpiresAt", nil)
@@ -509,41 +524,18 @@ action.OnServerEvent:Connect(function(player, request, value)
 			local _, words = crews:Select(state, value, raids.wave ~= nil)
 			message(player, words)
 		elseif request == actions.Upgrade then
-			local _, words = EconomyService.Upgrade(state, value)
+			local words = upgrades:Buy(state, value)
 			SkillService.Update(player, state)
 			message(player, words)
 		elseif request == actions.Rebirth then
-			local best, reason = EconomyService.RebirthCheck(state)
-			if not best then message(player, reason) return end
-			local kept = best.cargo
-			for _, slot in ipairs(state.bay.slots) do
-				if slot.cargo and slot.cargo ~= kept then slot.cargo.model:Destroy() end
-				slot.cargo = nil
-				updateSlot(slot)
-			end
-			state.cash, state.bank, state.level, state.guide = 90, 0, 0, 1
-			state.speedLevel, state.shieldLevel = 0, 0
-			state.rebirths += 1
-			dockCargo(state.bay.slots[1], kept)
-			state.guide = 3
-			EconomyService.Activity(state, "Rebirth")
+			local success, words = upgrades:Rebirth(state, dockCargo, updateSlot)
+			if not success then message(player, words); return end
+			ContractService.Activity(state, "Rebirth")
 			SkillService.Update(player, state)
 			World.flash(state.bay.bank.Position, World.gold, 12)
-			message(player, "Rebirth complete. Best cargo kept, +25% base income, +2s shield" .. (state.rebirths == 2 and ", longer Blink!" or "."))
-		elseif request == actions.Contract then
-			local contract = Catalog.contracts[state.contract]
-			if state.progress < contract.goal then message(player, "Contract is still in progress.") return end
-			state.cash += contract.reward
-			state.contract = state.contract % #Catalog.contracts + 1
-			state.progress = 0
-			message(player, "Contract complete  /  +$" .. contract.reward)
-		elseif request == actions.ContractSkip then
-			if state.progress >= Catalog.contracts[state.contract].goal then message(player, "Claim this completed contract first.") return end
-			if state.cash < 90 then message(player, "Need $90 to skip a contract.") return end
-			state.cash -= 90
-			state.contract = state.contract % #Catalog.contracts + 1
-			state.progress = 0
-			message(player, "New contract  /  " .. Catalog.contracts[state.contract].title)
+			message(player, words)
+		elseif request == actions.Contract or request == actions.ContractSkip then
+			message(player, ContractService.Claim(state, value, request == actions.ContractSkip))
 		elseif request == actions.Recycle then
 			local weakest
 			for _, slot in ipairs(state.bay.slots) do

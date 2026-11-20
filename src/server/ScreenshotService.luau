@@ -6,7 +6,6 @@ local ScreenshotMode = require(Orbit:WaitForChild("ScreenshotMode"))
 local DataService = require(script.Parent.DataService)
 local ScreenshotService = {}
 ScreenshotService.__index = ScreenshotService
-local fields = { "cash", "bank", "level", "rebirths", "guide", "crew", "contract", "progress", "index", "speedLevel", "shieldLevel", "milestone" }
 
 function ScreenshotService.new(context)
 	assert(RunService:IsStudio(), "Screenshot staging requires Studio")
@@ -38,9 +37,12 @@ function ScreenshotService:Reset()
 	local state = self.profiles[player]
 	if self.preview then self.preview:Destroy(); self.preview = nil end
 	if state and state.previewSaved then
-		local restored = DataService.Decode(state.previewSaved, #state.bay.slots)
+		local restored = DataService.Decode(state.previewSaved)
 		self:Clear(state)
-		for _, key in ipairs(fields) do state[key] = restored[key] end
+		for key, value in pairs(restored) do
+			if key ~= "inventory" then state[key] = value end
+		end
+		self.resize(state.bay, Catalog.slotCount(state))
 		for position, record in ipairs(restored.inventory) do
 			record.model = self.world.figure(record, self.world.root)
 			self.dockCargo(state.bay.slots[position], record)
@@ -77,7 +79,7 @@ function ScreenshotService:Select(scene, player)
 	self.world.root:SetAttribute("ScreenshotPreset", scene)
 	self:Clear(state)
 	state.cash, state.bank, state.level, state.rebirths, state.guide = 867500, 12500, 3, 3, 4
-	state.speedLevel, state.shieldLevel, state.milestone = 2, 2, 3
+	state.speedLevel, state.carryLevel, state.shieldLevel, state.milestone = 2, 2, 2, 3
 	state.contract, state.progress, state.index = 1, Catalog.contracts[1].goal, {}
 	for id = 1, 32 do state.index[Catalog.discoveryKey({ id = id, mutation = 1 })] = true end
 	for position, id in ipairs({ 1, 15, 28, 36, 44, 48 }) do

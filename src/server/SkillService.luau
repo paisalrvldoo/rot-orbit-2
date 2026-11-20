@@ -7,8 +7,8 @@ function SkillService.Update(player, state)
 	local sprinting = workspace:GetServerTimeNow() < (state.sprintUntil or 0)
 	local skill = Catalog.skills.Sprint
 	local speed = sprinting and (state.carry and skill.carrySpeed or skill.speed) or (state.carry and 13 or 16)
-	if workspace:GetServerTimeNow() < (state.stunnedUntil or 0) then speed = 6 end
-	humanoid.WalkSpeed = speed + 2 * (state.speedLevel or 0)
+	local upgrade = state.carry and (state.carryLevel or 0) or (state.speedLevel or 0)
+	humanoid.WalkSpeed = workspace:GetServerTimeNow() < (state.stunnedUntil or 0) and 6 or speed + 2 * upgrade
 end
 
 function SkillService.Use(player, state, name, limitBlink)

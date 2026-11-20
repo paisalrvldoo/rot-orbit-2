@@ -3,6 +3,7 @@ local Catalog = require(Orbit.Catalog)
 local BayShield = require(script.Parent.BayShield)
 local CrewService = require(script.Parent.CrewService)
 local EconomyService = require(script.Parent.EconomyService)
+local ContractService = require(script.Parent.ContractService)
 
 local GremlinRaid = {}
 GremlinRaid.__index = GremlinRaid
@@ -235,7 +236,7 @@ end
 
 function GremlinRaid:Zap(player, state, enemy, now)
 	self.world.flash(enemy.position + Vector3.yAxis * 2, self.world.gold, 6)
-	EconomyService.Activity(state, "Zap")
+	ContractService.Activity(state, "Zap")
 	enemy.health = math.max(0, enemy.health - config.damage)
 	self:Release(enemy, enemy.position, true)
 	if enemy.health > 0 then

@@ -194,6 +194,10 @@ function MeteorSolarEvents:Step(now)
 			local state = self.profiles[player]
 			if state and not state.loading and not state.closing and state.carry == cargo then
 				self.activity(state, "SurviveMeteor", cargo)
+				local root = self.rootOf(player)
+				if root and self:IsProtected(root.Position, now) then
+					self.activity(state, "ShelterMeteor", cargo)
+				end
 			end
 		end
 		self.holding = {}

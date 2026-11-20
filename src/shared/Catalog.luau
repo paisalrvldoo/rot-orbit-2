@@ -75,9 +75,20 @@ end
 
 Catalog.upgrades = { 240, 620, 1550, 3800, 8000 }
 Catalog.utilityUpgrades = {
-	Speed = { name = "Flight boots", key = "speedLevel", costs = { 310, 780, 1800, 4200 }, detail = "+2 walking, carrying and sprint speed per level" },
+	Speed = { name = "Flight boots", key = "speedLevel", costs = { 310, 780, 1800, 4200 }, detail = "+2 walking and sprint speed with empty hands per level" },
+	Carry = { name = "Cargo harness", key = "carryLevel", costs = { 470, 1200, 2700, 6000 }, detail = "+2 movement speed while carrying per level" },
 	Shield = { name = "Bay shield", key = "shieldLevel", costs = { 360, 900, 2100, 4600 }, detail = "+4 seconds of protection per level" },
+	Slots = { name = "Extra docks", key = "slotsLevel", costs = { 4000, 12000, 36000, 108000 }, detail = "+1 cargo dock per level" },
 }
+Catalog.baseSlots = 6
+function Catalog.bonusSlots(rebirths)
+	return rebirths > 0 and math.min(4, rebirths + 1) or 0
+end
+
+function Catalog.slotCount(state)
+	return Catalog.baseSlots + (state.slotsLevel or 0) + Catalog.bonusSlots(state.rebirths)
+end
+
 Catalog.rebirthMax = 10
 Catalog.indexMilestones = { { goal = 10, reward = 300 }, { goal = 20, reward = 1400 }, { goal = 35, reward = 5000 }, { goal = 45, reward = 15000 } }
 Catalog.crews = {
@@ -96,6 +107,30 @@ Catalog.contracts = {
 	{ title = "Rift Defender", kind = "Zap", goal = 2, reward = 220, detail = "Land 2 zaps on rift gremlins" },
 	{ title = "Strange Cargo", kind = "Mutation", goal = 2, reward = 600, detail = "Dock 2 mutated brainrots" },
 	{ title = "Fresh Orbit", kind = "Rebirth", goal = 1, reward = 1100, detail = "Complete a rebirth" },
+}
+
+Catalog.contractTracks = {
+	{ title = "Freight", stages = {
+		{ kind = "Dock", title = "Dock 3 brainrots", goal = 3, reward = 360 },
+		{ kind = "Buy", minTier = 3, title = "Buy 5 Rare or better", goal = 5, reward = 1800 },
+		{ kind = "Buy", minTier = 4, title = "Buy 3 Epic or better", goal = 3, reward = 3500 },
+		{ kind = "Dock", minTier = 5, title = "Dock 3 Legendary or better", goal = 3, reward = 9000 },
+		{ kind = "Buy", minTier = 6, title = "Buy 3 Mythic or better", goal = 3, reward = 22500 },
+	} },
+	{ title = "Raider", stages = {
+		{ kind = "Steal", title = "Dock 2 stolen brainrots", goal = 2, reward = 450 },
+		{ kind = "Steal", title = "Dock 5 stolen brainrots", goal = 5, reward = 1500 },
+		{ kind = "Steal", minTier = 5, title = "Dock 2 stolen Legendary or better", goal = 2, reward = 6500 },
+		{ kind = "Dock", minTier = 4, title = "Dock 6 Epic or better", goal = 6, reward = 7000 },
+		{ kind = "Rebirth", title = "Complete a rebirth", goal = 1, reward = 6000 },
+	} },
+	{ title = "Station Defence", stages = {
+		{ kind = "ShelterMeteor", title = "Finish a meteor shower sheltered with cargo", goal = 1, reward = 500 },
+		{ kind = "Zap", title = "Land 3 zaps on attackers", goal = 3, reward = 750 },
+		{ kind = "ShelterMeteor", minTier = 6, title = "Shelter Mythic cargo through a shower", goal = 1, reward = 6000 },
+		{ kind = "Zap", title = "Land 5 zaps on attackers", goal = 5, reward = 1250 },
+		{ kind = "ShelterMeteor", minTier = 5, title = "Shelter Legendary cargo through 3 showers", goal = 3, reward = 9000 },
+	} },
 }
 
 function Catalog.rebirthCost(rebirths)
