@@ -166,7 +166,9 @@ function MeteorSolarEvents:Wave(now)
 	local carriers = {}
 	for player, state in pairs(self.profiles) do
 		local root = not state.loading and not state.closing and state.carry and self.rootOf(player)
-		if root then table.insert(carriers, root.Position) end
+		if root and not self:IsProtected(root.Position, now) then
+			table.insert(carriers, root.Position)
+		end
 	end
 	for index = 1, Catalog.meteor.perWave do
 		local position

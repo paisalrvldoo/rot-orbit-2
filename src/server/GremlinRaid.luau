@@ -175,6 +175,10 @@ function GremlinRaid:Advance(enemy, delta, now)
 	end
 	if now < enemy.ready then return end
 	local phase = enemy.phase
+	if phase == "Hold" then
+		if now >= enemy.retryAt then enemy.phase = "Enter" end
+		return
+	end
 	local goal = enemy.entrance
 	if phase == "Home" then
 		goal = enemy.origin
@@ -211,7 +215,14 @@ function GremlinRaid:Advance(enemy, delta, now)
 		for _, slot in ipairs(enemy.state.bay.slots) do
 			if slot.cargo then table.insert(choices, slot) end
 		end
-		if #choices == 0 then enemy.phase = "Home"; return end
+		if #choices == 0 then
+			if enemy.captain then
+				enemy.phase, enemy.retryAt = "Hold", now + 2
+			else
+				enemy.phase = "Home"
+			end
+			return
+		end
 		enemy.slot = choices[self.random:NextInteger(1, #choices)]
 		enemy.phase = "Grab"
 		return
@@ -221,6 +232,7 @@ function GremlinRaid:Advance(enemy, delta, now)
 	self:Label(enemy)
 	self.sync(enemy.owner, enemy.state)
 	self.message(enemy.owner, "An attacker took " .. Catalog.name(enemy.cargo) .. ". Zap it to recover your cargo!")
+	return false
 end
 
 function GremlinRaid:Nearest(origin, limit, now)
@@ -241,7 +253,12 @@ function GremlinRaid:Zap(player, state, enemy, now)
 	self:Release(enemy, enemy.position, true)
 	if enemy.health > 0 then
 		enemy.ready = now + config.stun
-		enemy.phase = enemy.phase == "Home" and "Home" or "Leave"
+		if enemy.captain then
+			-- The captain presses the same bay after a stun instead of fleeing.
+			enemy.phase = "Enter"
+		elseif enemy.phase ~= "Home" then
+			enemy.phase = "Leave"
+		end
 		self:Label(enemy)
 		self.message(player, "Attacker stunned / " .. enemy.health .. " HP left.")
 	else
