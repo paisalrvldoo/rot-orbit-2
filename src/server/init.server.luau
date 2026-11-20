@@ -15,6 +15,7 @@ local EconomyService = require(script:WaitForChild("EconomyService"))
 local MeteorSolarEvents = require(script:WaitForChild("MeteorSolarEvents"))
 local RivalService = require(script:WaitForChild("RivalService"))
 local StealService = require(script:WaitForChild("StealService"))
+local GremlinRaid = require(script:WaitForChild("GremlinRaid"))
 local GuideService = require(script:WaitForChild("GuideService"))
 local ConveyorService = require(script:WaitForChild("ConveyorService"))
 local ScreenshotService = require(script:WaitForChild("ScreenshotService"))
@@ -26,9 +27,6 @@ local bays = World.build()
 local profiles = {}
 local crews = CrewService.new(profiles)
 local waiting = {}
-local raid
-local raidCount = 0
-local finishRaid
 local serverClosing = false
 local action = network.Action
 local screenshotService
@@ -151,6 +149,9 @@ local rivals = RivalService.new({ bays = bays, profiles = profiles, world = Worl
 
 local steals = StealService.new({ world = World, profiles = profiles, near = near, rootOf = rootOf,
 	take = take, clearSource = clearSource, returnCargo = returnCargo, setCarry = setCarry, sync = sync, message = message })
+local raids = GremlinRaid.new({ world = World, profiles = profiles, bays = bays, random = rng,
+	take = take, returnCargo = returnCargo, steals = steals, crews = crews, near = near, sync = sync,
+	message = message, announce = announce })
 
 local meteorMutation = 2
 local weather = MeteorSolarEvents.new({
@@ -352,7 +353,7 @@ end
 Players.PlayerAdded:Connect(join)
 for _, player in ipairs(Players:GetPlayers()) do task.spawn(join, player) end
 local function settleCargo(player, state)
-	if raid and (raid.target.bay == state.bay or (raid.cargo and raid.cargo.source and raid.cargo.source.bay == state.bay)) then finishRaid(true) end
+	raids:Settle(state)
 	for other, otherState in pairs(profiles) do
 		local cargo = otherState.carry
 		if cargo and cargo.source and cargo.source.bay == state.bay then
@@ -377,7 +378,7 @@ end
 if RunService:IsStudio() then
 	screenshotService = ScreenshotService.new({ world = World, profiles = profiles, weather = weather,
 		network = network, rootOf = rootOf, sync = sync, updateSlot = updateSlot, dockCargo = dockCargo,
-		settle = settleCargo, finishRaid = function(recovered) if finishRaid then finishRaid(recovered) end end })
+		settle = settleCargo, finishRaid = function() raids:Clear() end })
 end
 
 Players.PlayerRemoving:Connect(function(player)
@@ -479,83 +480,6 @@ end
 
 conveyor = ConveyorService.new({ random = rng, profiles = profiles, stock = stock, place = placeOffer })
 
-finishRaid = function(recovered)
-	local active = raid
-	if not active then return end
-	raid = nil
-	active.model:Destroy()
-	workspace:SetAttribute("Raid", "")
-	workspace:SetAttribute("RaidHealth", 0)
-	workspace:SetAttribute("RaidEndsAt", 0)
-	if not active.cargo then return end
-	if recovered then
-		returnCargo(active.cargo)
-	else
-		local source = active.cargo.source
-		-- The escaping gremlin drops the loot at the portal for a final recovery window.
-		steals:Drop(active.cargo, World.portal)
-		if source and source.bay.owner then message(source.bay.owner, "Your cargo fell at the rift. Recover it before it expires.") end
-	end
-end
-
-local function startRaid()
-	if World.root:GetAttribute("ScreenshotFrozen") then return end
-	local now = workspace:GetServerTimeNow()
-	local target, highest = nil, -1
-	for _, state in pairs(profiles) do
-		if not state.loading and not state.closing and now >= state.lockedUntil then
-			for _, slot in ipairs(state.bay.slots) do
-				if slot.cargo and Catalog.rate(slot.cargo) > highest then
-					target = slot
-					highest = Catalog.rate(slot.cargo)
-				end
-			end
-		end
-	end
-	if not target then return end
-	raidCount += 1
-	local boss = raidCount % 3 == 0
-	raid = { target = target, cargo = nil, position = World.portal, model = World.gremlin(), ready = now + 5, health = boss and 4 or 2, boss = boss, endsAt = now + 50 }
-	workspace:SetAttribute("Raid", (boss and "BOSS RAID" or "RIFT RAID") .. "  /  BAY " .. target.bay.number)
-	workspace:SetAttribute("RaidHealth", raid.health)
-	workspace:SetAttribute("RaidEndsAt", raid.endsAt)
-	announce((boss and "Boss gremlin" or "Gremlin") .. " inbound to Bay " .. target.bay.number .. "! Lock the bay or land " .. raid.health .. " zaps.")
-end
-
-local function moveRaid(delta, now)
-	local active = raid
-	if not active or now < active.ready then return end
-	if now >= active.endsAt then finishRaid(false); return end
-	local slot = active.target
-	local owner = slot.bay.owner
-	local state = owner and profiles[owner]
-	if not active.cargo and (not slot.cargo or not state or state.loading or state.closing or BayShield.IsActive(state, now)) then
-		finishRaid(false)
-		if state and BayShield.IsActive(state, now) then
-			state.cash += 25
-			crews:Award(state, 5)
-			sync(owner, state)
-			message(owner, "Raid repelled  /  +$25 defence bonus.")
-		end
-		return
-	end
-	local goal = active.cargo and World.portal or slot.pad.Position
-	goal = Vector3.new(goal.X, World.portal.Y, goal.Z)
-	local direction = goal - active.position
-	if direction.Magnitude > 1 then
-		active.position += direction.Unit * math.min(direction.Magnitude, delta * (active.cargo and 9 or 7))
-		local cf = CFrame.lookAt(active.position, active.position + direction)
-		active.model:PivotTo(cf)
-		if active.cargo then active.cargo.model:PivotTo(cf * CFrame.new(0, .85, 2)) end
-	elseif active.cargo then
-		finishRaid(false)
-	else
-		active.cargo = take(slot)
-		sync(owner, state)
-		workspace:SetAttribute("Raid", active.boss and "BOSS HAS CARGO  /  CHASE TO RIFT" or "CARGO TAKEN  /  CHASE TO RIFT")
-		message(owner, "The gremlin has your cargo. Zap it before it reaches the rift!")
-	end
-end
 
 action.OnServerEvent:Connect(function(player, request, value)
 	if request == actions.Screenshot then
@@ -582,7 +506,7 @@ action.OnServerEvent:Connect(function(player, request, value)
 		if now < (state.menuReady or 0) then return end
 		state.menuReady = now + .3
 		if request == actions.Crew then
-			local _, words = crews:Select(state, value, raid ~= nil)
+			local _, words = crews:Select(state, value, raids.wave ~= nil)
 			message(player, words)
 		elseif request == actions.Upgrade then
 			local _, words = EconomyService.Upgrade(state, value)
@@ -642,50 +566,19 @@ action.OnServerEvent:Connect(function(player, request, value)
 		if request == actions.Rebirth then task.spawn(function() data:Save(player, false) end) end
 		return
 	end
-	if now < state.zapReady then return end
+	if now < state.zapReady or now < (state.stunnedUntil or 0) then return end
 	state.zapReady = now + Catalog.zap.cooldown
 	player:SetAttribute("ZapReady", state.zapReady)
 	World.flash(root.Position, World.cyan, 7)
 	local target, targetState, targetPosition, best = steals:NearestThief(player, state, root.Position, now)
-	if raid and (raid.position - root.Position).Magnitude <= best
-		and not BayShield.BlocksZap(profiles, root.Position, raid.position, now) then
-		World.flash(raid.position + Vector3.yAxis * 2, World.gold, 6)
-		EconomyService.Activity(state, "Zap")
-		raid.health -= 1
-		workspace:SetAttribute("RaidHealth", raid.health)
-		if raid.health > 0 then
-			raid.ready = now + 1
-			message(player, "Gremlin stunned  /  " .. raid.health .. " zaps remaining.")
-			sync(player, state)
-			return
-		end
-		local boss, position, cargo = raid.boss, raid.position, raid.cargo
-		raid.cargo = nil
-		finishRaid(true)
-		announce(player.DisplayName .. " zapped the rift gremlin.")
-		if cargo then
-			steals:Drop(cargo, position, true)
-			local owner = cargo.source and cargo.source.bay.owner
-			if owner then message(owner, "Raid cargo dropped. Recover it where the gremlin fell.") end
-		end
-		local reward = boss and 220 or 65
-		state.cash += reward
-		crews:Award(state, boss and 30 or 10)
-		for member, memberState in pairs(profiles) do
-			if member ~= player and not memberState.loading and not memberState.closing
-				and CrewService.Same(state, memberState) and near(member, position, 40) then
-				memberState.cash += 20
-				sync(member, memberState)
-				message(member, "Squad defence assist  /  +$20")
-			end
-		end
-		sync(player, state)
-		message(player, (boss and "Boss" or "Gremlin") .. " repelled  /  +$" .. reward)
+	local enemy = raids:Nearest(root.Position, target and best or math.huge, now)
+	if enemy then
+		raids:Zap(player, state, enemy, now)
 	elseif target then
 		steals:Disarm(target, targetState, targetPosition, now)
 		message(player, "Stolen cargo dropped. Recover it with E.")
 	else
-		message(player, "Zap needs a gremlin or cargo thief within 22 studs.")
+		message(player, "Zap missed. Move closer to an attacker or cargo thief.")
 	end
 end)
 
@@ -703,7 +596,7 @@ task.spawn(function()
 			if root then state.carry.model:PivotTo(root.CFrame * CFrame.new(0, -.85, -2.6)) end
 		end
 		local serverNow = workspace:GetServerTimeNow()
-		if not frozen then moveRaid(math.min(delta, .35), serverNow) end
+		if not frozen then raids:Step(math.min(delta, .35), serverNow) end
 		weather:Step(serverNow)
 	end
 end)
@@ -730,12 +623,5 @@ task.spawn(function()
 				message(player, "Station relief grant  /  Wallet topped up to $75.")
 			end
 		end
-	end
-end)
-
-task.spawn(function()
-	while true do
-		task.wait(48)
-		if not raid then startRaid() end
 	end
 end)
