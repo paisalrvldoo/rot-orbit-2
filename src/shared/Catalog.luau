@@ -54,9 +54,11 @@ Catalog.mutations = {
 }
 -- Standard cargo occupies slot 1; the six mutations retain stable discovery IDs.
 Catalog.mutationCount = #Catalog.mutations - 1
-Catalog.marketThemes = { 1, 2, 1, 3, 1, 4, 2, 1, 5, 2, 3, 6 }
-Catalog.cosmicChance = .12
-Catalog.secretChance = .018
+Catalog.conveyor = {
+	interval = 4.5, capacity = 12, entryAngle = math.pi / 2,
+	previewTiers = { 1, 2, 1, 3, 1, 4, 2, 1, 5, 2, 3, 6 },
+	weights = { 30, 25, 19, 12, 8, 4, 1.8, .2 },
+}
 Catalog.zap = { range = 22, cooldown = 3, stun = 1.2, stealCooldown = 6 }
 Catalog.meteor = { interval = 90, duration = 20, warning = 2.5, waveInterval = 2,
 	perWave = 2, radius = 9, damage = 25, stun = 1, shelterRadius = 9 }

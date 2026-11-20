@@ -1,35 +1,87 @@
--- Supply policy stays separate from the orbit's world presentation.
+-- Offers share an entry point and expire after one circuit, even if nobody buys.
 local Catalog = require(game:GetService("ReplicatedStorage"):WaitForChild("Orbit"):WaitForChild("Catalog"))
 local ConveyorService = {}
 ConveyorService.__index = ConveyorService
+local config = Catalog.conveyor
+local lap = config.interval * config.capacity
 
-function ConveyorService.new(random, profiles)
-	return setmetatable({ random = random, profiles = profiles, restocks = 0 }, ConveyorService)
+function ConveyorService.new(context)
+	context.offers = {}
+	context.clock, context.nextSpawn, context.arrivals = 0, config.interval, 0
+	local self = setmetatable(context, ConveyorService)
+	for i, tier in ipairs(config.previewTiers) do
+		self:Spawn(self:Cargo(tier, true, i == 1 and 1 or nil), -(i - 1) * config.interval, true)
+	end
+	return self
 end
 
-function ConveyorService:Roll(index, first)
-	local tier = Catalog.marketThemes[index]
-	if not first then
-		self.restocks += 1
-		-- Keep Common lanes affordable; regularly supply the tier needed to rebirth.
-		if tier > 1 and self.restocks % 4 == 0 then
-			for _, state in pairs(self.profiles) do
-				if not state.loading and not state.closing and state.rebirths >= 3 then
-					tier = math.max(tier, Catalog.rebirthTier(state.rebirths))
-				end
+function ConveyorService:Cargo(tier, standard, id)
+	local choices = Catalog.byTier[tier]
+	return { id = id or choices[self.random:NextInteger(1, #choices)],
+		mutation = standard and 1 or Catalog.rollMutation(self.random) }
+end
+
+function ConveyorService:Roll()
+	self.arrivals += 1
+	if self.arrivals % 3 == 0 then
+		return self:Cargo(1, true, self.random:NextInteger(1, 4))
+	end
+	if self.arrivals % 4 == 1 then
+		local required
+		for _, state in pairs(self.profiles) do
+			if not state.loading and not state.closing and state.rebirths >= 3 and state.rebirths < Catalog.rebirthMax then
+				required = math.max(required or 0, Catalog.rebirthTier(state.rebirths))
 			end
 		end
+		if required then return self:Cargo(required, false) end
 	end
-	if index == #Catalog.marketThemes then
-		local chance = self.random:NextNumber()
-		if chance < Catalog.secretChance then tier = 8
-		elseif chance < Catalog.secretChance + Catalog.cosmicChance then tier = math.max(tier, 7) end
+	local roll = self.random:NextNumber(0, 100)
+	for tier, weight in ipairs(config.weights) do
+		roll -= weight
+		if roll < 0 then return self:Cargo(tier, false) end
 	end
-	local choices = Catalog.byTier[tier]
-	return {
-		id = first and index == 1 and 1 or choices[self.random:NextInteger(1, #choices)],
-		mutation = not first and Catalog.marketThemes[index] ~= 1 and Catalog.rollMutation(self.random) or 1,
-	}
+	return self:Cargo(#config.weights, false)
+end
+
+function ConveyorService:Spawn(cargo, born, preview)
+	local offer = { cargo = cargo, born = born, expires = born + lap }
+	self.offers[offer] = true
+	self.stock(offer, preview, workspace:GetServerTimeNow() + offer.expires - self.clock)
+	self.place(offer, config.entryAngle + (self.clock - born) * math.pi * 2 / lap)
+end
+
+function ConveyorService:Claim(offer)
+	if not self.offers[offer] or self.clock >= offer.expires then return false end
+	self.offers[offer] = nil
+	return true
+end
+
+function ConveyorService:Step(delta, frozen)
+	if frozen then
+		self.paused = true
+		return
+	end
+	local resumed = self.paused
+	self.paused = false
+	self.clock += resumed and 0 or delta
+	local count = 0
+	for offer in pairs(self.offers) do
+		if self.clock >= offer.expires then
+			self.offers[offer] = nil
+			offer.cargo.model:Destroy()
+		else
+			if resumed then
+				offer.cargo.model:SetAttribute("OfferExpiresAt", workspace:GetServerTimeNow() + offer.expires - self.clock)
+			end
+			self.place(offer, config.entryAngle + (self.clock - offer.born) * math.pi * 2 / lap)
+			count += 1
+		end
+	end
+	if self.clock >= self.nextSpawn then
+		-- A stalled server resumes at the normal cadence instead of spawning a burst.
+		self.nextSpawn += (math.floor((self.clock - self.nextSpawn) / config.interval) + 1) * config.interval
+		if count < config.capacity then self:Spawn(self:Roll(), self.clock, false) end
+	end
 end
 
 return ConveyorService

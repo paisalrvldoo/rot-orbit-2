@@ -25,7 +25,6 @@ local bays = World.build()
 local profiles = {}
 local crews = CrewService.new(profiles)
 local waiting = {}
-local market = {}
 local drops = {}
 local raid
 local raidCount = 0
@@ -510,27 +509,16 @@ task.spawn(function()
 	end
 end)
 
-local themes = Catalog.marketThemes
-local conveyor = ConveyorService.new(rng, profiles)
-local function roll(index, first)
-	local cargo = conveyor:Roll(index, first)
-	cargo.model = World.figure(cargo, World.root)
-	return cargo
-end
-
-local function placeOffer(offer)
-	local angle = offer.angle
+local conveyor
+local function placeOffer(offer, angle)
 	local pos = Vector3.new(math.cos(angle) * World.radius, .18, math.sin(angle) * World.radius)
 	offer.cargo.model:PivotTo(CFrame.lookAt(pos, Vector3.new(0, .18, 0)))
 end
 
-local function stock(offer, first)
-	local cargo = roll(offer.index, first)
-	offer.cargo = cargo
-	local lifetime = math.pi * 2 / .12
-	offer.refresh = os.clock() + lifetime
-	cargo.model:SetAttribute("OfferExpiresAt", workspace:GetServerTimeNow() + lifetime)
-	placeOffer(offer)
+local function stock(offer, first, expiresAt)
+	local cargo = offer.cargo
+	cargo.model = World.figure(cargo, World.root)
+	cargo.model:SetAttribute("OfferExpiresAt", expiresAt)
 	local cost = Catalog.price(cargo)
 	local rate = Catalog.rate(cargo)
 	local rarity = Catalog.tiers[Catalog.entries[cargo.id].tier]
@@ -546,27 +534,23 @@ local function stock(offer, first)
 	prompt.Triggered:Connect(function(player)
 		if World.root:GetAttribute("ScreenshotFrozen") then return end
 		local state = profiles[player]
-		if offer.cargo ~= cargo or not state or state.loading or state.closing or not near(player, anchor.Position, 13) then return end
+		if not state or state.loading or state.closing or not near(player, anchor.Position, 13) then return end
 		if state.carry then message(player, "Dock your current cargo first.") return end
 		if not EconomyService.FreeSlot(state) then message(player, "Bay full. Recycle your weakest cargo in Upgrades.") return end
 		if state.cash < cost then message(player, "Need $" .. cost .. " for this brainrot.") return end
+		if not conveyor:Claim(offer) then return end
 		state.cash -= cost
 		label.Parent:Destroy()
 		prompt:Destroy()
-		offer.cargo = nil
+		cargo.model:SetAttribute("OfferExpiresAt", nil)
 		state.guide = math.max(state.guide, 2)
 		setCarry(player, state, cargo)
 		sync(player, state)
 		message(player, "Bought " .. Catalog.name(cargo) .. ". Head to Bay " .. state.bay.number .. ".")
-		offer.refresh = os.clock() + 3
 	end)
 end
 
-for i = 1, #themes do
-	local offer = { angle = (i - 1) * math.pi * 2 / #themes + math.pi / 2, index = i }
-	market[i] = offer
-	stock(offer, true)
-end
+conveyor = ConveyorService.new({ random = rng, profiles = profiles, stock = stock, place = placeOffer })
 
 finishRaid = function(recovered)
 	local active = raid
@@ -800,36 +784,16 @@ task.spawn(function()
 	while not serverClosing do
 		task.wait(.09)
 		local now = os.clock()
-		local delta = math.min(now - last, .35)
+		local delta = now - last
 		last = now
-		for _, offer in ipairs(market) do
-			if World.root:GetAttribute("ScreenshotFrozen") then continue end
-			offer.angle = (offer.angle + delta * .12) % (math.pi * 2)
-			if offer.cargo then
-				if now >= offer.refresh then
-					local anchor = offer.cargo.model.PrimaryPart
-					local busy = false
-					for player in pairs(profiles) do
-						if near(player, anchor.Position, 11) then busy = true break end
-					end
-					if busy then
-						offer.refresh += 3
-					else
-						offer.cargo.model:Destroy()
-						stock(offer, false)
-					end
-				end
-				placeOffer(offer)
-			elseif now >= offer.refresh then
-				stock(offer, false)
-			end
-		end
+		local frozen = World.root:GetAttribute("ScreenshotFrozen")
+		conveyor:Step(delta, frozen)
 		for player, state in pairs(profiles) do
 			local root = state.carry and rootOf(player)
 			if root then state.carry.model:PivotTo(root.CFrame * CFrame.new(0, -.85, -2.6)) end
 		end
 		local serverNow = workspace:GetServerTimeNow()
-		if not World.root:GetAttribute("ScreenshotFrozen") then moveRaid(delta, serverNow) end
+		if not frozen then moveRaid(math.min(delta, .35), serverNow) end
 		weather:Step(serverNow)
 	end
 end)
