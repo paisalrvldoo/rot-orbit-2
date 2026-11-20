@@ -122,6 +122,7 @@ end)
 local prompts = {}
 local function refreshPrompt(prompt)
 	local kind = prompt:GetAttribute("OrbitPrompt")
+	if not kind then return end
 	local owner = prompt:GetAttribute("Owner") or 0
 	local mine = owner == player.UserId
 	local carrying = (player:GetAttribute("Carry") or "") ~= ""
@@ -135,9 +136,9 @@ local function refreshPrompt(prompt)
 	prompt.MaxActivationDistance = usable and 9 or 0
 end
 local function watchPrompt(instance)
-	if not instance:IsA("ProximityPrompt") or not instance:GetAttribute("OrbitPrompt") then return end
+	if not instance:IsA("ProximityPrompt") or prompts[instance] then return end
 	prompts[instance] = true
-	for _, key in ipairs({ "Owner", "Occupied", "Crew", "LockedUntil", "Rival" }) do
+	for _, key in ipairs({ "OrbitPrompt", "Owner", "Occupied", "Crew", "LockedUntil", "Rival" }) do
 		instance:GetAttributeChangedSignal(key):Connect(function() refreshPrompt(instance) end)
 	end
 	instance.Destroying:Connect(function() prompts[instance] = nil end)
