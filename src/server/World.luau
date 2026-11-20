@@ -94,6 +94,8 @@ local function sign(parent, cf, width, height, words, accent)
 		label.TextColor3 = accent
 		label.TextScaled = true
 		label.Text = words
+		label.TextStrokeColor3 = ink
+		label.TextStrokeTransparency = .22
 		label.Parent = gui
 	end
 	for _, y in ipairs({ -height / 2, height / 2 }) do
@@ -117,16 +119,40 @@ end
 
 function World.build()
 	Lighting.ClockTime = 0
-	Lighting.Brightness = 1.7
-	Lighting.Ambient = Color3.fromRGB(92, 94, 128)
-	Lighting.OutdoorAmbient = Color3.fromRGB(75, 86, 121)
-	Lighting.ExposureCompensation = -.12
+	Lighting.Brightness = 1.45
+	Lighting.Ambient = Color3.fromRGB(24, 34, 60)
+	Lighting.OutdoorAmbient = Color3.fromRGB(12, 19, 39)
+	Lighting.ExposureCompensation = -.08
+	Lighting.GlobalShadows = true
+	Lighting.ShadowSoftness = .28
+	Lighting.EnvironmentDiffuseScale = .22
+	Lighting.EnvironmentSpecularScale = .48
+	Lighting.Technology = Enum.Technology.Future
 
 	local glow = Instance.new("BloomEffect")
-	glow.Intensity = .78
-	glow.Size = 32
-	glow.Threshold = 1.08
+	glow.Name = "Orbit Bloom"
+	glow.Intensity = .92
+	glow.Size = 38
+	glow.Threshold = .82
 	glow.Parent = Lighting
+
+	local grade = Instance.new("ColorCorrectionEffect")
+	grade.Name = "Orbit Color Grade"
+	grade.Brightness = -.025
+	grade.Contrast = .12
+	grade.Saturation = .12
+	grade.TintColor = Color3.fromRGB(201, 224, 255)
+	grade.Parent = Lighting
+
+	local atmosphere = Instance.new("Atmosphere")
+	atmosphere.Name = "Orbit Deep Space"
+	atmosphere.Color = Color3.fromRGB(14, 20, 42)
+	atmosphere.Decay = Color3.fromRGB(2, 4, 13)
+	atmosphere.Density = .025
+	atmosphere.Glare = 0
+	atmosphere.Haze = .08
+	atmosphere.Offset = .08
+	atmosphere.Parent = Lighting
 
 	local root = Instance.new("Folder")
 	root.Name = "RotOrbitStation"
@@ -136,7 +162,7 @@ function World.build()
 	for i = 1, 72 do
 		local theta = rng:NextNumber(0, math.pi * 2)
 		local pos = Vector3.new(math.cos(theta) * 300, rng:NextNumber(-45, 175), math.sin(theta) * 300)
-		local size = rng:NextNumber(.3, 1.2)
+		local size = i % 11 == 0 and rng:NextNumber(.8, 1.35) or rng:NextNumber(.22, .62)
 		World.part(root, "Star", Vector3.one * size, CFrame.new(pos), i % 5 == 0 and cyan or ice, neon, false, Enum.PartType.Ball)
 	end
 	local planet = Vector3.new(-92, 57, -129)
@@ -151,23 +177,33 @@ function World.build()
 	cylinder(root, "Reactor Well", Vector3.new(0, .14, 0), 11, .17, Color3.fromRGB(15, 97, 121), neon)
 	cylinder(root, "Reactor Core", Vector3.new(0, .24, 0), 3.4, .1, cyan, neon)
 	ring(root, Vector3.new(0, 1.08, 0), Vector3.xAxis, Vector3.zAxis, 77, 40, .9, dark, nil, true)
-	ring(root, Vector3.new(0, 1.58, 0), Vector3.xAxis, Vector3.zAxis, 77, 40, .15, cyan, neon)
+	ring(root, Vector3.new(0, 1.7, 0), Vector3.xAxis, Vector3.zAxis, 77, 40, .17, cyan, neon)
+	for i = 0, 11 do
+		local angle = i * math.pi / 6
+		local position = Vector3.new(math.cos(angle) * 77, 1.75, math.sin(angle) * 77)
+		World.part(root, "Orbit Rail Post", Vector3.new(.2, 2.4, .2), CFrame.new(position), dark, Enum.Material.Metal)
+		World.part(root, "Rail Marker", Vector3.new(.3, .28, .3), CFrame.new(position + Vector3.new(0, 1.28, 0)),
+			i % 3 == 0 and gold or cyan, neon)
+	end
 	for _, spec in ipairs({ { 28.8, cyan }, { 29.8, dark }, { 34.2, dark }, { 35.2, gold } }) do
 		ring(root, Vector3.new(0, .12, 0), Vector3.xAxis, Vector3.zAxis, spec[1], 48,
 			spec[2] == dark and .75 or .23, spec[2], spec[2] == dark and Enum.Material.Metal or neon)
 	end
-	for i = 0, 23 do
-		local angle = i * math.pi / 12
+	ring(root, Vector3.new(0, .38, 0), Vector3.xAxis, Vector3.zAxis, 33.5, 40, .3, ice, neon)
+	for i = 0, 19 do
+		local angle = i * math.pi / 10
 		local axis = Vector3.new(math.cos(angle), 0, math.sin(angle))
 		local y = Vector3.new(0, .06, 0)
 		bar(root, axis * 12 + y, axis * 25.5 + y, .075, i % 3 == 0 and pink or cyan, neon)
 		bar(root, axis * 36.8 + y, axis * 43 + y, .10, i % 3 == 0 and gold or cyan, neon)
 	end
-	for _, x in ipairs({ -12.6, 12.6 }) do
-		World.part(root, "Marquee Support", Vector3.new(.55, 9.5, .75), CFrame.new(x, 4.75, -5), cyan, Enum.Material.Metal)
+	for _, x in ipairs({ -17.1, 17.1 }) do
+		World.part(root, "Marquee Support", Vector3.new(.55, 12.5, .75), CFrame.new(x, 6.25, -5), cyan, Enum.Material.Metal)
+		World.part(root, "Marquee Beacon", Vector3.new(.9, .65, .9), CFrame.new(x, 12.7, -5), ice, neon)
 	end
-	sign(root, CFrame.new(0, 9.15, -5), 26, 4.5, "ROT ORBIT", ice)
-	sign(root, CFrame.new(0, 6.0, -5), 19, 1.25, "ORBIT MARKET  /  DOCKING RING", cyan)
+	World.part(root, "Marquee Backplate", Vector3.new(35, 8.5, .34), CFrame.new(0, 8.35, -5.35), ink, Enum.Material.Metal)
+	sign(root, CFrame.new(0, 9.4, -5), 32, 5.5, "ROT ORBIT", ice)
+	sign(root, CFrame.new(0, 5.9, -5), 24, 1.5, "ORBIT MARKET  /  DOCKING RING", gold)
 
 	local bays = {}
 	for i = 1, 6 do
@@ -177,19 +213,30 @@ function World.build()
 		local pivot = CFrame.lookAt(center, center - backward)
 		local accent = i % 3 == 0 and gold or cyan
 		World.part(root, "Bay Deck", Vector3.new(27, .45, 19), pivot * CFrame.new(0, .19, 0), dark, Enum.Material.Metal, true)
-		for _, x in ipairs({ -13.5, 13.5 }) do
-			World.part(root, "Bay Stripe", Vector3.new(.17, .13, 19), pivot * CFrame.new(x, .47, 0), accent, neon)
+		for _, x in ipairs({ -13.2, 13.2 }) do
+			World.part(root, "Bay Stripe", Vector3.new(.18, .13, 19), pivot * CFrame.new(x, .47, 0), accent, neon)
 			World.part(root, "Bay Pylon", Vector3.new(.45, 5, .45), pivot * CFrame.new(x, 2.7, 9), accent, Enum.Material.Metal)
+		end
+		for _, z in ipairs({ -9.35, 9.35 }) do
+			World.part(root, "Bay Threshold", Vector3.new(27, .13, .18), pivot * CFrame.new(0, .47, z), accent, neon)
 		end
 		local header = sign(root, pivot * CFrame.new(0, 5.2, 9), 27, 2.1, "BAY " .. i .. "  /  VACANT", accent)
 		local bay = { header = header, slots = {}, spawn = pivot * CFrame.new(0, 3.5, -12), center = center }
+		local ramp = World.part(root, "Bay Access Ramp", Vector3.new(13, .42, 10),
+			pivot * CFrame.new(0, .16, -15) * CFrame.Angles(-.04, 0, 0), dark, Enum.Material.Metal, true)
+		ramp.TopSurface = Enum.SurfaceType.Smooth
+		for _, x in ipairs({ -6.2, 6.2 }) do
+			World.part(root, "Ramp Light", Vector3.new(.12, .08, 9.8),
+				pivot * CFrame.new(x, .4, -15) * CFrame.Angles(-.04, 0, 0), accent, neon)
+		end
 		for slot = 1, 6 do
 			local x = ((slot - 1) % 3 - 1) * 7.7
 			local z = slot <= 3 and -2.5 or 5
 			local pos = (pivot * CFrame.new(x, .5, z)).Position
-			cylinder(root, "Dock Base", pos, 5.4, .5, ink, Enum.Material.Metal)
-			cylinder(root, "Dock Ring", pos + Vector3.new(0, .29, 0), 5.05, .12, accent, neon)
-			local pad = cylinder(root, "Dock " .. slot, pos + Vector3.new(0, .42, 0), 4.55, .2, dark)
+			cylinder(root, "Dock Base", pos, 5.6, .5, ink, Enum.Material.Metal)
+			cylinder(root, "Dock Ring", pos + Vector3.new(0, .29, 0), 5.1, .12, accent, neon)
+			cylinder(root, "Dock Inner Ring", pos + Vector3.new(0, .37, 0), 4.7, .08, ice, neon)
+			local pad = cylinder(root, "Dock " .. slot, pos + Vector3.new(0, .46, 0), 4.35, .22, dark)
 			bay.slots[slot] = { pad = pad, cf = CFrame.lookAt(pad.Position, pad.Position - backward) }
 		end
 		local bank = World.part(root, "Credit Terminal", Vector3.new(2.6, 2.5, 1.6), pivot * CFrame.new(-8.5, 1.55, -7.7), dark)
@@ -202,10 +249,13 @@ function World.build()
 	end
 	for _, x in ipairs({ -43, 43 }) do
 		local center = Vector3.new(x, 6.2, 0)
-		ring(root, center, Vector3.zAxis, Vector3.yAxis, 6, 26, .24, x < 0 and cyan or gold, neon)
-		ring(root, center, Vector3.zAxis, Vector3.yAxis, 6.5, 26, .14, x < 0 and gold or pink, neon)
+		local portalColor = x < 0 and cyan or pink
+		cylinder(root, "Portal Landing", Vector3.new(x, .18, 0), 14, .36, dark, Enum.Material.Metal, true)
+		cylinder(root, "Portal Landing Trim", Vector3.new(x, .4, 0), 13.2, .08, portalColor, neon)
+		ring(root, center, Vector3.zAxis, Vector3.yAxis, 6, 24, .27, portalColor, neon)
+		ring(root, center, Vector3.zAxis, Vector3.yAxis, 6.45, 24, .15, x < 0 and gold or ice, neon)
 	end
-	World.portal = Vector3.new(43, .25, 0)
+	World.portal = Vector3.new(43, .42, 0)
 	local gate = World.part(root, "Rift Beacon", Vector3.new(2, .35, 2), CFrame.new(World.portal), pink, neon)
 	World.billboard(gate, "GREMLIN RIFT", gold, 145, 23, 6.5, 46)
 	return bays
@@ -229,8 +279,10 @@ function World.figure(cargo, parent)
 	local function piece(name, size, pos, color, material, shape)
 		return World.part(model, name, size, CFrame.new(pos), color, material, false, shape)
 	end
-	local anchor = cylinder(model, "Hover Ring", Vector3.new(0, .2, 0), 3.6, .19, accent, neon)
-	cylinder(model, "Hover Plate", Vector3.new(0, .32, 0), 3.25, .17, ink)
+	local pedestalScale = entry.tier >= 7 and 1.16 or entry.tier >= 6 and 1.12
+		or entry.tier >= 5 and 1.08 or entry.tier >= 4 and 1.04 or 1
+	local anchor = cylinder(model, "Hover Ring", Vector3.new(0, .2, 0), 3.6 * pedestalScale, .19, accent, neon)
+	cylinder(model, "Hover Plate", Vector3.new(0, .32, 0), 3.25 * pedestalScale, .17, ink)
 	model.PrimaryPart = anchor
 	anchor.PivotOffset = anchor.CFrame:ToObjectSpace(CFrame.identity)
 	local ball = Enum.PartType.Ball
@@ -256,7 +308,8 @@ function World.figure(cargo, parent)
 	end
 	piece("Badge", Vector3.new(.38, .39, .15), Vector3.new(0, 1.49, -.81), accent, neon, ball)
 	if entry.tier >= 4 or mutation.color then
-		ring(model, Vector3.new(0, 3.9, 0), Vector3.xAxis, Vector3.zAxis, 1.18, 10, .08, accent, neon)
+		local haloRadius = 1.12 + math.max(0, entry.tier - 4) * .12
+		ring(model, Vector3.new(0, 3.8, 0), Vector3.xAxis, Vector3.zAxis, haloRadius, 10, .08, accent, neon)
 	end
 	model.Parent = parent
 	return model
