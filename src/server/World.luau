@@ -1,6 +1,7 @@
 local Catalog = require(game:GetService("ReplicatedStorage"):WaitForChild("Orbit"):WaitForChild("Catalog"))
 local Backdrop = require(script.Parent.OrbitBackdrop)
 local BrainrotModel = require(script.Parent.BrainrotModel)
+local BillboardLabels = require(script.Parent.BillboardLabels)
 local Pedestals = require(script.Parent.Pedestals)
 
 local World = {
@@ -62,6 +63,8 @@ local function ring(parent, center, u, v, radius, count, width, color, material,
 end
 
 function World.billboard(part, words, color, width, height, offset, distance)
+	local card = part:FindFirstChild("CargoCard")
+	if card and words:find("/s", 1, true) then return BillboardLabels.offer(card) end
 	local gui = Instance.new("BillboardGui")
 	gui.Size = UDim2.fromOffset(width, height)
 	gui.StudsOffsetWorldSpace = Vector3.new(0, offset, 0)
@@ -117,6 +120,7 @@ function World.prompt(part, action, object, key, hold, distance)
 	prompt.RequiresLineOfSight = false
 	prompt.MaxActivationDistance = distance or 9
 	prompt.Parent = part
+	if part:GetAttribute("SlotIndex") then Pedestals.bindPrompt(part, prompt) end
 	return prompt
 end
 
@@ -192,7 +196,8 @@ function World.build()
 		for slot = 1, 6 do
 			local x = ((slot - 1) % 3 - 1) * 7.7
 			local z = slot <= 3 and -2.5 or 5
-			bay.slots[slot] = Pedestals.build(root, pivot * CFrame.new(x, .415, z), slot, accent, World.part, cylinder)
+			bay.slots[slot] = Pedestals.build(root, pivot * CFrame.new(x, .415, z), slot, accent,
+				World.part, cylinder, World.billboard)
 		end
 		local bank = World.part(root, "Credit Terminal", Vector3.new(2.6, 2.5, 1.6), pivot * CFrame.new(-8.5, 1.55, -7.7), dark)
 		World.part(root, "Terminal Screen", Vector3.new(2.1, .87, .13), pivot * CFrame.new(-8.5, 2.1, -8.55), accent, neon)
@@ -227,6 +232,7 @@ function World.figure(cargo, parent)
 	local rarity = Catalog.tiers[entry.tier]
 	local mutation = Catalog.mutations[cargo.mutation]
 	local model = BrainrotModel.build(entry, rarity, mutation, Catalog.name(cargo), World.part)
+	BillboardLabels.cargo(model, rarity, Catalog.rate(cargo), Catalog.price(cargo))
 	model.Parent = parent
 	return model
 end
