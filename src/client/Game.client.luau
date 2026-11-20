@@ -191,7 +191,7 @@ local function render()
 	local carried = player:GetAttribute("Carry") or ""
 	cash.Text = "$" .. number(player:GetAttribute("Cash"))
 	bank.Text = "$" .. number(player:GetAttribute("Unclaimed")) .. " banked   •   +" .. number(player:GetAttribute("Income")) .. "/s"
-	if stage == 0 then
+	if stage == 0 or not bay then
 		guide.Text = player:GetAttribute("Loading") and "Loading your saved docking bay…" or "Waiting for a free docking bay"
 	elseif carried ~= "" then
 		guide.Text = "Dock " .. carried .. " at Bay " .. bay
