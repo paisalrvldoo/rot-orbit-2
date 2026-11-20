@@ -7,9 +7,12 @@ local ember = Color3.fromRGB(241, 101, 66)
 local neon = Enum.Material.Neon
 local maxMeteors = 4
 
-function StationEffects.bind(root, part, reactor, grade)
+function StationEffects.bind(root, part, reactor, grade, shelters)
 	local active = 0
 	local current
+	local solarEnabled = false
+	local flights = {}
+	local connections = {}
 	local lightTween, gradeTween, coreTween
 	local calm = {
 		Ambient = Lighting.Ambient,
@@ -24,9 +27,9 @@ function StationEffects.bind(root, part, reactor, grade)
 	}
 
 	local function meteor(impact, duration, offset)
-		if active >= maxMeteors or not root.Parent then return end
-		active += 1
+		if active >= maxMeteors or not root.Parent or root:GetAttribute("ScreenshotFrozen") then return end
 		local travel = offset or Vector3.new(-41, 79, 25)
+		if travel.Magnitude < .01 then travel = Vector3.new(0, 79, 0) end
 		local seconds = math.clamp(duration or 1.4, .25, 5)
 		local start = impact + travel
 		local rock = part(root, "Falling Meteor", Vector3.one * 1.35, CFrame.new(start),
@@ -44,26 +47,45 @@ function StationEffects.bind(root, part, reactor, grade)
 		streak.Color = ColorSequence.new(amber, ember)
 		streak.Transparency = NumberSequence.new(.12, .94)
 		streak.Parent = rock
+		active += 1
+		local flight = {}
+		flights[rock] = flight
+		local function release()
+			if not flights[rock] then return end
+			flights[rock] = nil
+			active -= 1
+			rock:Destroy()
+		end
+		flight.cancel = function()
+			if flight.tween then flight.tween:Cancel() end
+			release()
+		end
 		task.spawn(function()
+			if not flights[rock] then return end
 			local fall = TweenService:Create(rock, TweenInfo.new(seconds, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
 				{ Position = impact })
+			flight.tween = fall
 			fall:Play()
-			fall.Completed:Wait()
-			if rock.Parent then
+			local playback = fall.Completed:Wait()
+			if playback == Enum.PlaybackState.Completed and rock.Parent and flights[rock] then
 				streak.Enabled = false
 				rock.Name = "Meteor Impact"
 				rock.Color = amber
 				local flash = TweenService:Create(rock, TweenInfo.new(.32, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 					{ Size = Vector3.new(10, .24, 10), Transparency = 1 })
+				flight.tween = flash
 				flash:Play()
 				flash.Completed:Wait()
-				rock:Destroy()
 			end
-			active -= 1
+			release()
 		end)
+		return rock
 	end
 
 	local function solarFlare(enabled)
+		enabled = enabled == true
+		if solarEnabled == enabled or not root.Parent then return end
+		solarEnabled = enabled
 		if lightTween then lightTween:Cancel() end
 		if gradeTween then gradeTween:Cancel() end
 		if coreTween then coreTween:Cancel() end
@@ -78,10 +100,25 @@ function StationEffects.bind(root, part, reactor, grade)
 	end
 
 	local function refresh()
+		if not root.Parent then return end
 		local event = workspace:GetAttribute("Event")
+		local solarActive = workspace:GetAttribute("SolarFlareActive")
+		if solarActive == nil then solarActive = event == "Solar Flare" end
+		solarFlare(solarActive)
+		local shower = workspace:GetAttribute("MeteorShowerActive")
+		if shower == nil then shower = event == "Meteor Shower" or event == "Meteor Drop" end
+		for _, shelter in ipairs(shelters or {}) do
+			local color = shower and amber or solarActive and Color3.fromRGB(255, 219, 145) or shelter.Color
+			shelter.Part.Color = color
+			shelter.Part.Transparency = shower and .72 or .88
+			shelter.Boundary.Color = color
+			shelter.Label.MaxDistance = shower and 50 or 26
+			shelter.Label.TextLabel.TextColor3 = color
+		end
 		if current == event then return end
-		if event == "Solar Flare" or current == "Solar Flare" then solarFlare(event == "Solar Flare") end
 		current = event
+		-- Authoritative showers call World.meteor for each warned impact. Only the
+		-- older Meteor Drop event needs a decorative fallback, so impacts never double.
 		if event ~= "Meteor Drop" then return end
 		meteor(Vector3.new(0, .44, 0), 1.2)
 		local deadline = workspace:GetAttribute("EventEndsAt")
@@ -93,15 +130,27 @@ function StationEffects.bind(root, part, reactor, grade)
 			end)
 		end
 	end
-	local connection = workspace:GetAttributeChangedSignal("Event"):Connect(function()
-		task.defer(refresh)
-	end)
+	for _, attribute in ipairs({ "Event", "SolarFlareActive", "MeteorShowerActive" }) do
+		table.insert(connections, workspace:GetAttributeChangedSignal(attribute):Connect(function()
+			task.defer(refresh)
+		end))
+	end
+	local function clearMeteors()
+		local pending = {}
+		for _, flight in pairs(flights) do table.insert(pending, flight) end
+		for _, flight in ipairs(pending) do flight.cancel() end
+	end
+	table.insert(connections, root:GetAttributeChangedSignal("ScreenshotFrozen"):Connect(function()
+		if root:GetAttribute("ScreenshotFrozen") then clearMeteors() end
+	end))
 	root.Destroying:Once(function()
-		connection:Disconnect()
-		if current == "Solar Flare" then
-			lightTween:Cancel()
-			gradeTween:Cancel()
-			coreTween:Cancel()
+		for _, connection in ipairs(connections) do connection:Disconnect() end
+		clearMeteors()
+		if lightTween then lightTween:Cancel() end
+		if gradeTween then gradeTween:Cancel() end
+		if coreTween then coreTween:Cancel() end
+		-- Also restore the baseline if teardown interrupts a flare fading out.
+		if lightTween then
 			for property, value in pairs(calm) do Lighting[property] = value end
 			grade.TintColor = calmTint
 		end
