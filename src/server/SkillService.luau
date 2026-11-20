@@ -7,6 +7,7 @@ function SkillService.Update(player, state)
 	local sprinting = workspace:GetServerTimeNow() < (state.sprintUntil or 0)
 	local skill = Catalog.skills.Sprint
 	local speed = sprinting and (state.carry and skill.carrySpeed or skill.speed) or (state.carry and 13 or 16)
+	if workspace:GetServerTimeNow() < (state.stunnedUntil or 0) then speed = 6 end
 	humanoid.WalkSpeed = speed + 2 * (state.speedLevel or 0)
 end
 
@@ -17,6 +18,7 @@ function SkillService.Use(player, state, name)
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	if not skill or not root or not humanoid or humanoid.Health <= 0 then return false end
 	local now = workspace:GetServerTimeNow()
+	if now < (state.stunnedUntil or 0) then return false, "Zap stun ends in a moment." end
 	local readyKey = name == "Blink" and "blinkReady" or "sprintReady"
 	if now < (state[readyKey] or 0) then
 		return false, name .. " recharges in " .. math.ceil(state[readyKey] - now) .. "s."

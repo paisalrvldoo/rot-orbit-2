@@ -8,6 +8,7 @@ local orbit = ReplicatedStorage:WaitForChild("Orbit")
 local Catalog = require(orbit:WaitForChild("Catalog"))
 local ScreenshotMode = require(orbit:WaitForChild("ScreenshotMode"))
 local action = orbit:WaitForChild("Action")
+local menuOpen = false
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "OrbitHUD"
@@ -81,6 +82,8 @@ notice.Text = ""
 notice.TextStrokeTransparency = .25
 local incident = label(gui, UDim2.new(1, -24, 0, 32), UDim2.new(.5, 0, 0, 192), gold, 14)
 incident.AnchorPoint = Vector2.new(.5, 0)
+incident.TextWrapped = true
+incident.TextTruncate = Enum.TextTruncate.None
 local skillBar = Instance.new("Frame")
 skillBar.Name = "Skills"
 skillBar.BackgroundTransparency = 1
@@ -102,6 +105,7 @@ for name, control in pairs({ Blink = blink, Sprint = sprint }) do
 	control.Activated:Connect(function() action:FireServer(name) end)
 end
 UserInputService.InputBegan:Connect(function(input, processed)
+	if menuOpen then return end
 	if not processed and (input.KeyCode == Enum.KeyCode.Q or input.KeyCode == Enum.KeyCode.ButtonY) then
 		action:FireServer("Zap")
 	elseif not processed and (input.KeyCode == Enum.KeyCode.F or input.KeyCode == Enum.KeyCode.ButtonB) then
@@ -120,15 +124,16 @@ local function refreshPrompt(prompt)
 	local occupied = prompt:GetAttribute("Occupied")
 	local crew = player:GetAttribute("CrewId") or 0
 	local friendly = crew > 0 and prompt:GetAttribute("Crew") == crew
+	local sealed = workspace:GetServerTimeNow() < (prompt:GetAttribute("LockedUntil") or 0)
 	local usable = not player:GetAttribute("Loading") and ((kind == "Owner" and mine)
-		or (kind == "Slot" and owner ~= 0 and ((mine and not occupied and carrying) or (not mine and not friendly and occupied and not carrying)))
+		or (kind == "Slot" and owner ~= 0 and ((mine and not occupied and carrying) or (not mine and not friendly and not sealed and occupied and not carrying)))
 	)
 	prompt.MaxActivationDistance = usable and 9 or 0
 end
 local function watchPrompt(instance)
 	if not instance:IsA("ProximityPrompt") or not instance:GetAttribute("OrbitPrompt") then return end
 	prompts[instance] = true
-	for _, key in ipairs({ "Owner", "Occupied", "Crew" }) do
+	for _, key in ipairs({ "Owner", "Occupied", "Crew", "LockedUntil" }) do
 		instance:GetAttributeChangedSignal(key):Connect(function() refreshPrompt(instance) end)
 	end
 	instance.Destroying:Connect(function() prompts[instance] = nil end)
@@ -142,24 +147,25 @@ end)
 
 local function renderIncident()
 	local raid = workspace:GetAttribute("Raid") or ""
-	incident.Text = raid ~= "" and raid or (workspace:GetAttribute("Event") or ""):upper()
+	local text = raid ~= "" and raid or (workspace:GetAttribute("Event") or ""):upper()
+	local deadline = workspace:GetAttribute(raid ~= "" and "RaidEndsAt" or "EventEndsAt") or 0
+	if raid ~= "" then text ..= "  •  " .. (workspace:GetAttribute("RaidHealth") or 0) .. " HP" end
+	if text ~= "" and deadline > 0 then text ..= "  •  " .. math.max(0, math.ceil(deadline - workspace:GetServerTimeNow())) .. "s" end
+	incident.Text = text
 end
 workspace:GetAttributeChangedSignal("Raid"):Connect(renderIncident)
 workspace:GetAttributeChangedSignal("Event"):Connect(renderIncident)
 renderIncident()
-task.spawn(function()
-	while gui.Parent do
-		local cooldown = math.ceil((player:GetAttribute("ZapReady") or 0) - workspace:GetServerTimeNow())
-		zap.Text = cooldown > 0 and "ZAP  " .. cooldown .. "s" or (UserInputService.TouchEnabled and "ZAP" or "ZAP  [Q]")
-		local now = workspace:GetServerTimeNow()
-		local blinkCooldown = math.max(0, math.ceil((player:GetAttribute("BlinkReady") or 0) - now))
-		local sprintCooldown = math.max(0, math.ceil((player:GetAttribute("SprintReady") or 0) - now))
-		blink.Text = blinkCooldown > 0 and "BLINK " .. blinkCooldown .. "s" or (UserInputService.TouchEnabled and "BLINK" or "BLINK [F]")
-		sprint.Text = now < (player:GetAttribute("SprintUntil") or 0) and "SPRINTING"
-			or (sprintCooldown > 0 and "RUN " .. sprintCooldown .. "s" or (UserInputService.TouchEnabled and "SPRINT" or "RUN [SHIFT]"))
-		task.wait(.2)
-	end
-end)
+local function updateSkills()
+	local cooldown = math.ceil((player:GetAttribute("ZapReady") or 0) - workspace:GetServerTimeNow())
+	zap.Text = cooldown > 0 and "ZAP  " .. cooldown .. "s" or (UserInputService.TouchEnabled and "ZAP" or "ZAP  [Q]")
+	local now = workspace:GetServerTimeNow()
+	local blinkCooldown = math.max(0, math.ceil((player:GetAttribute("BlinkReady") or 0) - now))
+	local sprintCooldown = math.max(0, math.ceil((player:GetAttribute("SprintReady") or 0) - now))
+	blink.Text = blinkCooldown > 0 and "BLINK " .. blinkCooldown .. "s" or (UserInputService.TouchEnabled and "BLINK" or "BLINK [F]")
+	sprint.Text = now < (player:GetAttribute("SprintUntil") or 0) and "SPRINTING"
+		or (sprintCooldown > 0 and "RUN " .. sprintCooldown .. "s" or (UserInputService.TouchEnabled and "SPRINT" or "RUN [SHIFT]"))
+end
 
 local function render()
 	local bay = player:GetAttribute("Bay")
@@ -177,8 +183,11 @@ local function render()
 		guide.Text = "3  /  Collect banked credits at Bay " .. bay
 	else
 		local remainder = math.ceil((player:GetAttribute("LockedUntil") or 0) - workspace:GetServerTimeNow())
-		guide.Text = remainder > 0 and ("BAY " .. bay .. "  /  SEALED " .. remainder .. "s")
-			or ("BAY " .. bay .. "   /   Collect credits and buy rarer cargo")
+		local recharge = math.max(0, math.ceil((player:GetAttribute("LockReady") or 0) - workspace:GetServerTimeNow()))
+		local crew = Catalog.crews[player:GetAttribute("CrewId") or 0]
+		guide.Text = "BAY " .. bay .. "  •  " .. (crew and crew.name or "SOLO") .. "\n"
+			.. (remainder > 0 and ("SEALED " .. remainder .. "s  •  Cargo protected")
+				or (recharge > 0 and ("Lock recharges in " .. recharge .. "s  •  Collect credits") or "Lock ready  •  Collect credits and upgrade"))
 	end
 end
 
@@ -196,6 +205,15 @@ for _, key in ipairs({ "Cash", "Unclaimed", "Income", "Carry", "Bay", "Guide", "
 	player:GetAttributeChangedSignal(key):Connect(render)
 end
 render()
+task.spawn(function()
+	while gui.Parent do
+		updateSkills()
+		render()
+		renderIncident()
+		for prompt in pairs(prompts) do refreshPrompt(prompt) end
+		task.wait(.2)
+	end
+end)
 
 local function button(parent, words, size, pos)
 	local control = panel("TextButton", parent, size, pos, Vector2.zero)
@@ -203,6 +221,8 @@ local function button(parent, words, size, pos)
 	control.TextColor3 = cyan
 	control.TextSize = 14
 	control.Text = words
+	control.TextWrapped = true
+	control.TextTruncate = Enum.TextTruncate.AtEnd
 	return control
 end
 
@@ -221,6 +241,7 @@ local close = button(menu, "×", UDim2.fromOffset(44, 44), UDim2.new(1, -51, 0, 
 close.ZIndex = 3
 local tabs = { "Index", "Upgrades", "Contracts", "Crews" }
 local active = "Index"
+local screenshotScene
 local content = Instance.new("ScrollingFrame")
 content.Size = UDim2.new(1, -24, 1, -108)
 content.Position = UDim2.fromOffset(12, 101)
@@ -285,6 +306,11 @@ refreshMenu = function()
 	if active == "Index" then
 		local seen = {}
 		for key in (player:GetAttribute("Index") or ""):gmatch("%d+") do seen[tonumber(key)] = true end
+		if screenshotScene == "Index" and RunService:IsStudio() then
+			for _, entry in ipairs(Catalog.entries) do seen[Catalog.discoveryKey({ id = entry.id, mutation = 1 })] = true end
+			for mutation = 2, #Catalog.mutations do seen[Catalog.discoveryKey({ id = 44, mutation = mutation })] = true end
+			line("STUDIO CATALOG PREVIEW", gold)
+		end
 		local count, mutations = 0, 0
 		for _, entry in ipairs(Catalog.entries) do
 			local discovered = false
@@ -297,6 +323,14 @@ refreshMenu = function()
 			if discovered then count += 1 end
 		end
 		line(count .. " / " .. #Catalog.entries .. " discovered   •   " .. mutations .. " mutations", gold)
+		local milestone = Catalog.indexMilestones[(player:GetAttribute("IndexMilestone") or 0) + 1]
+		if milestone then line("Next index bonus: " .. milestone.goal .. " names → $" .. number(milestone.reward), white) end
+		local variants = {}
+		for mutation = 2, #Catalog.mutations do
+			local variant = Catalog.mutations[mutation]
+			table.insert(variants, variant.name .. " ×" .. variant.factor)
+		end
+		line("6 mutations: " .. table.concat(variants, "  •  "), cyan, 64)
 		for _, entry in ipairs(Catalog.entries) do
 			local versions = {}
 			for mutation, variant in ipairs(Catalog.mutations) do
@@ -322,9 +356,25 @@ refreshMenu = function()
 				menu.Visible = false
 			end)
 		end
+		for _, kind in ipairs({ "Speed", "Shield" }) do
+			local definition = Catalog.utilityUpgrades[kind]
+			local utilityLevel = player:GetAttribute(kind .. "Upgrade") or 0
+			local price = definition.costs[utilityLevel + 1]
+			line(definition.name .. "  /  " .. utilityLevel .. " of " .. #definition.costs, gold)
+			line(definition.detail, white)
+			if price then
+				menuRow("UPGRADE " .. kind:upper() .. "  $" .. number(price)).Activated:Connect(function() action:FireServer("Upgrade", kind) end)
+			end
+		end
+		line("Shield protects for " .. (player:GetAttribute("LockDuration") or 32) .. "s. Rebirth 2 unlocks longer Blink.", cyan, 48)
 		line("Rebirths  /  " .. rebirths, gold)
-		line("Reset cargo, credits and upgrades for a permanent 25% base income boost. Keep all discoveries.", white, 46)
-		confirmButton("REBIRTH   $" .. Catalog.rebirthCost(rebirths), "CONFIRM REBIRTH", "Rebirth")
+		line("Keep your best cargo and all discoveries. Reset other cargo, credits and upgrades for +25% base income and +2s shield.", white, 72)
+		if rebirths < Catalog.rebirthMax then
+			line("Requires a docked " .. Catalog.tiers[Catalog.rebirthTier(rebirths)].name .. " or better.", cyan)
+			confirmButton("REBIRTH   $" .. number(Catalog.rebirthCost(rebirths)), "CONFIRM REBIRTH", "Rebirth")
+		else
+			line("ORBIT ACE  •  All 10 rebirths complete", gold)
+		end
 		line("Free a slot by scrapping your lowest earner for half its market price.", white, 43)
 		confirmButton("RECYCLE WEAKEST CARGO", "CONFIRM RECYCLE", "Recycle")
 	elseif active == "Contracts" then
@@ -334,11 +384,15 @@ refreshMenu = function()
 		line(contract.detail .. "   •   " .. progress .. " / " .. contract.goal, white)
 		if progress >= contract.goal then
 			menuRow("CLAIM REWARD").Activated:Connect(function() action:FireServer("Contract") end)
+		else
+			menuRow("SKIP CONTRACT  $90").Activated:Connect(function() action:FireServer("ContractSkip") end)
 		end
+		line("Next: " .. Catalog.contracts[(player:GetAttribute("Contract") or 1) % #Catalog.contracts + 1].title, cyan)
+		line("Contracts cycle through cargo, credits, raids, mutations and rebirths. Claim each finished reward here.", white, 72)
 	elseif active == "Crews" then
 		local current = player:GetAttribute("CrewId") or 0
 		line("Play Solo or join a squad", gold)
-		line("Squadmates cannot steal or zap each other's cargo. Scores last for this server: +2 per new discovery, +10 per gremlin zap.", white, 72)
+		line("Squadmates cannot steal or zap each other's cargo. Server scores: +2 new discovery, +5 shield defence, +10 gremlin, +30 boss. Nearby squadmates earn $20 assists.", white, 100)
 		line("Your defence score: " .. (player:GetAttribute("PersonalScore") or 0), gold)
 		menuRow(current == 0 and "SOLO  •  ACTIVE" or "PLAY SOLO").Activated:Connect(function() action:FireServer("Crew", 0) end)
 		for id, crew in ipairs(Catalog.crews) do
@@ -364,6 +418,7 @@ local function layout()
 	local size = gui.AbsoluteSize
 	local short = size.Y < 500
 	wallet.Size = UDim2.fromOffset(math.min(280, math.max(180, size.X - 24)), short and 58 or 68)
+	bank.Size = UDim2.new(1, -20, 0, short and 20 or 28)
 	guideBox.Position = UDim2.new(.5, 0, 0, short and 76 or 86)
 	guideBox.Size = UDim2.new(1, -24, 0, short and 40 or 56)
 	notice.Position = UDim2.new(.5, 0, 0, short and 118 or 146)
@@ -371,6 +426,7 @@ local function layout()
 	incident.Position = UDim2.new(.5, 0, 0, short and 152 or 192)
 	menu.Size = UDim2.new(1, -24, 1, -24)
 	menuButton.Text = UserInputService.TouchEnabled and "LOGBOOK" or "LOGBOOK  [I]"
+	title.TextSize = size.X < 400 and 17 or 21
 	local horizontal = short and size.X >= 600
 	skillBar.Size = UDim2.fromOffset(horizontal and 316 or 100, horizontal and 48 or 160)
 	skillBar.Position = horizontal and UDim2.new(.5, 0, 1, -122) or UDim2.new(1, -10, .57, 0)
@@ -385,6 +441,7 @@ layout()
 for index, tab in ipairs(tabs) do
 	local tabButton = button(menu, tab, UDim2.new(1 / #tabs, -8, 0, 44), UDim2.new((index - 1) / #tabs, 4, 0, 52))
 	tabButton.ZIndex = 3
+	tabButton.TextSize = 13
 	tabButtons[tab] = tabButton
 	tabButton.Activated:Connect(function() openMenu(tab) end)
 end
@@ -393,6 +450,7 @@ menuButton.Activated:Connect(function()
 end)
 close.Activated:Connect(function() menu.Visible = false end)
 menu:GetPropertyChangedSignal("Visible"):Connect(function()
+	menuOpen = menu.Visible
 	wallet.Visible = not menu.Visible
 	guideBox.Visible = not menu.Visible
 	notice.Visible = not menu.Visible
@@ -400,7 +458,7 @@ menu:GetPropertyChangedSignal("Visible"):Connect(function()
 	skillBar.Visible = not menu.Visible
 	menuButton.Visible = not menu.Visible
 end)
-for _, key in ipairs({ "Index", "Upgrade", "Rebirths", "Contract", "ContractProgress", "CrewId", "PersonalScore", "SaveStatus" }) do
+for _, key in ipairs({ "Index", "Upgrade", "SpeedUpgrade", "ShieldUpgrade", "Rebirths", "Contract", "ContractProgress", "CrewId", "PersonalScore", "SaveStatus", "IndexMilestone" }) do
 	player:GetAttributeChangedSignal(key):Connect(refreshMenu)
 end
 player:GetAttributeChangedSignal("Loading"):Connect(function()
@@ -424,6 +482,7 @@ ScreenshotMode.Listen(function(scene)
 	local camera = workspace.CurrentCamera
 	if not camera then return end
 	originalFov = originalFov or camera.FieldOfView
+	screenshotScene = scene
 	menu.Visible = false
 	if scene == "Reset" then
 		camera.CameraType = Enum.CameraType.Custom

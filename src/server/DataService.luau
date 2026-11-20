@@ -16,7 +16,10 @@ function DataService.Decode(saved, slots)
 	local contract = math.max(1, integer(saved.contract, 1, #Catalog.contracts))
 	local result = {
 		cash = integer(saved.cash, 90, MAX_CASH), bank = integer(saved.bank, 0, MAX_CASH),
-		level = integer(saved.level, 0, #Catalog.upgrades), rebirths = integer(saved.rebirths, 0, 1000),
+		level = integer(saved.level, 0, #Catalog.upgrades), rebirths = integer(saved.rebirths, 0, Catalog.rebirthMax),
+		speedLevel = integer(saved.speedLevel, 0, #Catalog.utilityUpgrades.Speed.costs),
+		shieldLevel = integer(saved.shieldLevel, 0, #Catalog.utilityUpgrades.Shield.costs),
+		milestone = integer(saved.milestone, 0, #Catalog.indexMilestones),
 		guide = math.max(1, integer(saved.guide, 1, 4)), crew = integer(saved.crew, 0, #Catalog.crews),
 		contract = contract, progress = integer(saved.progress, 0, Catalog.contracts[contract].goal),
 		index = {}, inventory = {},
@@ -44,6 +47,7 @@ function DataService.Encode(state)
 	local saved = {
 		version = VERSION, cash = state.cash, bank = state.bank, level = state.level,
 		rebirths = state.rebirths, guide = state.guide, crew = state.crew,
+		speedLevel = state.speedLevel or 0, shieldLevel = state.shieldLevel or 0, milestone = state.milestone or 0,
 		contract = state.contract, progress = state.progress, index = {}, inventory = {},
 	}
 	for key in pairs(state.index) do table.insert(saved.index, key) end

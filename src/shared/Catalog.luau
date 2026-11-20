@@ -58,6 +58,12 @@ function Catalog.rollMutation(random)
 end
 
 Catalog.upgrades = { 240, 620, 1550, 3800, 8000 }
+Catalog.utilityUpgrades = {
+	Speed = { name = "Flight boots", key = "speedLevel", costs = { 310, 780, 1800, 4200 }, detail = "+2 walking, carrying and sprint speed per level" },
+	Shield = { name = "Bay shield", key = "shieldLevel", costs = { 360, 900, 2100, 4600 }, detail = "+4 seconds of protection per level" },
+}
+Catalog.rebirthMax = 10
+Catalog.indexMilestones = { { goal = 10, reward = 300 }, { goal = 20, reward = 1400 }, { goal = 35, reward = 5000 }, { goal = 45, reward = 15000 } }
 Catalog.crews = {
 	{ name = "Ion Runners", color = Color3.fromRGB(94, 237, 255) },
 	{ name = "Solar Union", color = Color3.fromRGB(255, 224, 102) },
@@ -68,13 +74,24 @@ Catalog.skills = {
 	Sprint = { cooldown = 11, duration = 4, speed = 28, carrySpeed = 21 },
 }
 Catalog.contracts = {
-	{ title = "Cargo Shift", goal = 3, reward = 180, detail = "Dock 3 brainrots" },
-	{ title = "Credit Run", goal = 250, reward = 260, detail = "Collect 250 banked credits" },
-	{ title = "Rare Delivery", goal = 1, reward = 410, detail = "Dock a Rare or better" },
+	{ title = "Cargo Shift", kind = "Dock", goal = 3, reward = 180, detail = "Dock 3 brainrots" },
+	{ title = "Credit Run", kind = "Collect", goal = 250, reward = 260, detail = "Collect 250 banked credits" },
+	{ title = "Rare Delivery", kind = "Dock", minTier = 3, goal = 1, reward = 410, detail = "Dock a Rare or better" },
+	{ title = "Rift Defender", kind = "Zap", goal = 2, reward = 220, detail = "Land 2 zaps on rift gremlins" },
+	{ title = "Strange Cargo", kind = "Mutation", goal = 2, reward = 600, detail = "Dock 2 mutated brainrots" },
+	{ title = "Fresh Orbit", kind = "Rebirth", goal = 1, reward = 1100, detail = "Complete a rebirth" },
 }
 
 function Catalog.rebirthCost(rebirths)
-	return 6500 + 3500 * rebirths
+	return math.floor(6500 * 1.7 ^ rebirths)
+end
+
+function Catalog.rebirthTier(rebirths)
+	return math.min(7, 3 + math.floor(rebirths / 2))
+end
+
+function Catalog.lockDuration(state)
+	return 32 + 4 * (state.shieldLevel or 0) + math.min(20, 2 * state.rebirths)
 end
 
 function Catalog.discoveryKey(cargo)

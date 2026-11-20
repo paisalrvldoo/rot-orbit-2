@@ -1,0 +1,78 @@
+local Catalog = require(game:GetService("ReplicatedStorage"):WaitForChild("Orbit"):WaitForChild("Catalog"))
+local EconomyService = {}
+
+function EconomyService.Rate(state, solar)
+	local rate = 0
+	for _, slot in ipairs(state.bay.slots) do
+		if slot.cargo then rate += Catalog.rate(slot.cargo) end
+	end
+	return math.floor(rate * (1 + .25 * state.level + .25 * state.rebirths) * (solar and 2 or 1))
+end
+
+function EconomyService.FreeSlot(state)
+	for _, slot in ipairs(state.bay.slots) do
+		if not slot.cargo and not slot.reserved then return slot end
+	end
+end
+
+function EconomyService.Activity(state, kind, cargo, amount)
+	local contract = Catalog.contracts[state.contract]
+	if contract.kind ~= kind then return end
+	if contract.minTier and (not cargo or Catalog.entries[cargo.id].tier < contract.minTier) then return end
+	state.progress = math.min(contract.goal, state.progress + (amount or 1))
+end
+
+function EconomyService.Discover(state, cargo)
+	local key = Catalog.discoveryKey(cargo)
+	if state.index[key] then return false, 0 end
+	state.index[key] = true
+	local found, count = {}, 0
+	for _, entry in ipairs(Catalog.entries) do
+		for mutation = 1, #Catalog.mutations do
+			if state.index[Catalog.discoveryKey({ id = entry.id, mutation = mutation })] then found[entry.id] = true; break end
+		end
+	end
+	for _ in pairs(found) do count += 1 end
+	local reward = 0
+	for index, milestone in ipairs(Catalog.indexMilestones) do
+		if count >= milestone.goal and index > (state.milestone or 0) then
+			reward += milestone.reward
+			state.milestone = index
+		end
+	end
+	state.cash += reward
+	return true, reward
+end
+
+function EconomyService.Upgrade(state, kind)
+	local definition = kind and Catalog.utilityUpgrades[kind]
+	if kind and kind ~= "Income" and not definition then return false, "Unknown upgrade." end
+	local key, costs = definition and definition.key or "level", definition and definition.costs or Catalog.upgrades
+	local price = costs[(state[key] or 0) + 1]
+	if not price then return false, "This upgrade is maxed." end
+	if state.cash < price then return false, "Need $" .. price .. " for this upgrade." end
+	state.cash -= price
+	state[key] = (state[key] or 0) + 1
+	return true, definition and (definition.name .. " upgraded to level " .. state[key] .. ".") or "Dock amplifier upgraded. +25% base income."
+end
+
+function EconomyService.RebirthCheck(state)
+	if state.rebirths >= Catalog.rebirthMax then return nil, "You reached Orbit Ace: all rebirths complete." end
+	if state.cash < Catalog.rebirthCost(state.rebirths) then return nil, "Need $" .. Catalog.rebirthCost(state.rebirths) .. " to rebirth." end
+	if state.carry then return nil, "Dock your carried cargo before rebirthing." end
+	local best
+	for _, slot in ipairs(state.bay.slots) do
+		if slot.reserved then return nil, "Recover your missing cargo before rebirthing." end
+		if slot.cargo and (not best or Catalog.rate(slot.cargo) > Catalog.rate(best.cargo)) then best = slot end
+	end
+	local highest = 0
+	for _, slot in ipairs(state.bay.slots) do
+		if slot.cargo then highest = math.max(highest, Catalog.entries[slot.cargo.id].tier) end
+	end
+	if not best or highest < Catalog.rebirthTier(state.rebirths) then
+		return nil, "Dock " .. Catalog.tiers[Catalog.rebirthTier(state.rebirths)].name .. " or better to qualify."
+	end
+	return best
+end
+
+return EconomyService
