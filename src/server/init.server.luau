@@ -167,13 +167,27 @@ local function dropPurchased(cargo, position)
 		local state = profiles[player]
 		if drops[cargo] ~= prompt or not state or state.loading or state.closing or state.carry
 			or not near(player, cargo.model.PrimaryPart.Position, 10) then return end
-		drops[cargo] = nil
-		prompt:Destroy()
 		if cargo.source and cargo.source.bay == state.bay then
+			drops[cargo] = nil
+			prompt:Destroy()
 			returnCargo(cargo)
 			message(player, "Your cargo was recovered and returned to its dock.")
 			return
 		end
+		local owner = cargo.source and cargo.source.bay.owner
+		if owner and CrewService.Same(state, profiles[owner]) then
+			drops[cargo] = nil
+			prompt:Destroy()
+			returnCargo(cargo)
+			message(player, "Squad cargo recovered and returned to its owner's bay.")
+			return
+		end
+		if not EconomyService.FreeSlot(state) then
+			message(player, "Bay full. Recycle cargo before recovering another brainrot.")
+			return
+		end
+		drops[cargo] = nil
+		prompt:Destroy()
 		setCarry(player, state, cargo)
 		state.guide = math.max(state.guide, 2)
 		sync(player, state)
@@ -276,6 +290,7 @@ for i, bay in ipairs(bays) do
 		bay.lockLabel.Text = "BAY SEALED"
 		bay.lockLabel.TextColor3 = World.gold
 		sync(player, state)
+		crews:Refresh()
 		message(player, "Bay sealed for " .. duration .. " seconds. It repels inbound raids.")
 	end)
 	for _, slot in ipairs(bay.slots) do
@@ -752,6 +767,7 @@ task.spawn(function()
 				state.lockedUntil = 0
 				state.bay.lockLabel.Text = "BAY OPEN"
 				state.bay.lockLabel.TextColor3 = World.cyan
+				crews:Refresh()
 			end
 			local rate = sync(player, state)
 			state.bank = math.min(1e12, state.bank + rate)

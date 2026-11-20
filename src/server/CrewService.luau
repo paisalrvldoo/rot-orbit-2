@@ -16,11 +16,20 @@ end
 
 function CrewService:Refresh()
 	for id in ipairs(Catalog.crews) do
-		local members = 0
-		for _, state in pairs(self.profiles) do
-			if state.crew == id then members += 1 end
+		local roster = {}
+		for player, state in pairs(self.profiles) do
+			if state.crew == id and not state.loading and not state.closing then
+				table.insert(roster, { number = state.bay.number, name = player.DisplayName,
+					sealed = workspace:GetServerTimeNow() < state.lockedUntil })
+			end
 		end
-		workspace:SetAttribute("CrewMembers" .. id, members)
+		table.sort(roster, function(a, b) return a.number < b.number end)
+		local rows = {}
+		for _, member in ipairs(roster) do
+			table.insert(rows, member.name .. "  •  BAY " .. member.number .. (member.sealed and "  •  SEALED" or "  •  OPEN"))
+		end
+		workspace:SetAttribute("CrewRoster" .. id, table.concat(rows, "\n"))
+		workspace:SetAttribute("CrewMembers" .. id, #roster)
 		workspace:SetAttribute("CrewScore" .. id, self.scores[id])
 	end
 end
