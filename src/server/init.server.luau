@@ -14,6 +14,7 @@ local BayShield = require(script:WaitForChild("BayShield"))
 local EconomyService = require(script:WaitForChild("EconomyService"))
 local MeteorSolarEvents = require(script:WaitForChild("MeteorSolarEvents"))
 local RivalService = require(script:WaitForChild("RivalService"))
+local StealService = require(script:WaitForChild("StealService"))
 local GuideService = require(script:WaitForChild("GuideService"))
 local ConveyorService = require(script:WaitForChild("ConveyorService"))
 local ScreenshotService = require(script:WaitForChild("ScreenshotService"))
@@ -25,7 +26,6 @@ local bays = World.build()
 local profiles = {}
 local crews = CrewService.new(profiles)
 local waiting = {}
-local drops = {}
 local raid
 local raidCount = 0
 local finishRaid
@@ -134,6 +134,7 @@ end
 local function returnCargo(cargo)
 	local source = clearSource(cargo)
 	if source then
+		cargo.stolen = nil
 		dockCargo(source, cargo)
 		local owner = source.bay.owner
 		if owner and profiles[owner] then
@@ -148,65 +149,8 @@ end
 local rivals = RivalService.new({ bays = bays, profiles = profiles, world = World, random = rng,
 	clearSource = clearSource, updateSlot = updateSlot, dockCargo = dockCargo })
 
-local function dropCargo(cargo, position, secured)
-	if not position or Vector3.new(position.X, 0, position.Z).Magnitude > 75 then
-		returnCargo(cargo)
-		return
-	end
-	cargo.model:PivotTo(CFrame.new(position.X, .55, position.Z))
-	local prompt = World.prompt(cargo.model.PrimaryPart, "Recover Cargo", Catalog.name(cargo), Enum.KeyCode.E, .32)
-	drops[cargo] = prompt
-	local claimUntil = workspace:GetServerTimeNow() + 6
-	prompt.Triggered:Connect(function(player)
-		if World.root:GetAttribute("ScreenshotFrozen") then return end
-		local state = profiles[player]
-		if drops[cargo] ~= prompt or not state or state.loading or state.closing or state.carry
-			or not near(player, cargo.model.PrimaryPart.Position, 10) then return end
-		local now = workspace:GetServerTimeNow()
-		if now < (state.stunnedUntil or 0) then return end
-		if cargo.source and cargo.source.bay == state.bay then
-			drops[cargo] = nil
-			prompt:Destroy()
-			returnCargo(cargo)
-			message(player, "Your cargo was recovered and returned to its dock.")
-			return
-		end
-		local owner = cargo.source and cargo.source.bay.owner
-		if owner and CrewService.Same(state, profiles[owner]) then
-			drops[cargo] = nil
-			prompt:Destroy()
-			returnCargo(cargo)
-			message(player, "Squad cargo recovered and returned to its owner's bay.")
-			return
-		end
-		if owner and (secured or now < claimUntil) then
-			message(player, "The owning squad has first claim on this cargo.")
-			return
-		end
-		if not EconomyService.FreeSlot(state) then
-			message(player, "Bay full. Recycle cargo before recovering another brainrot.")
-			return
-		end
-		drops[cargo] = nil
-		prompt:Destroy()
-		setCarry(player, state, cargo)
-		state.guide = math.max(state.guide, 2)
-		sync(player, state)
-		message(player, "Cargo recovered. Bring it to your bay.")
-	end)
-	task.delay(25, function()
-		if drops[cargo] ~= prompt then return end
-		drops[cargo] = nil
-		prompt:Destroy()
-		if secured then
-			returnCargo(cargo)
-			return
-		end
-		local source = clearSource(cargo)
-		if source and source.bay.owner then message(source.bay.owner, "Rift recovery window expired. Your slot is available again.") end
-		cargo.model:Destroy()
-	end)
-end
+local steals = StealService.new({ world = World, profiles = profiles, near = near, rootOf = rootOf,
+	take = take, clearSource = clearSource, returnCargo = returnCargo, setCarry = setCarry, sync = sync, message = message })
 
 local meteorMutation = 2
 local weather = MeteorSolarEvents.new({
@@ -218,13 +162,13 @@ local weather = MeteorSolarEvents.new({
 	drop = function(player, state, position)
 		local cargo = state.carry
 		setCarry(player, state, nil)
-		dropCargo(cargo, position)
+		steals:Drop(cargo, position)
 	end,
 	onShowerEnd = function()
 		local cargo = { id = rng:NextInteger(8, 21), mutation = meteorMutation }
 		meteorMutation = meteorMutation == #Catalog.mutations and 2 or meteorMutation + 1
 		cargo.model = World.figure(cargo, World.root)
-		dropCargo(cargo, Vector3.zero)
+		steals:Drop(cargo, Vector3.zero)
 		announce("Shower cleared. Mutated meteor salvage is available at the reactor.")
 	end,
 })
@@ -334,32 +278,16 @@ for i, bay in ipairs(bays) do
 			local state = profiles[player]
 			if not state or state.loading or state.closing or not near(player, slot.pad.Position, 10) then return end
 			if state.bay ~= bay then
-				local owner = bay.owner
-				local ownerState = owner and profiles[owner]
-				if not slot.cargo or state.carry then return end
-				if not bay.rival and (not ownerState or ownerState.loading or ownerState.closing) then return end
-				local now = workspace:GetServerTimeNow()
-				if now < (state.stunnedUntil or 0) then message(player, "Wait for the stun to end before stealing.") return end
-				if CrewService.Same(state, ownerState) then message(player, "Squad cargo is protected.") return end
-				if not EconomyService.FreeSlot(state) then message(player, "Recycle cargo to free a docking slot first.") return end
-				if now < (state.stealReady or 0) then message(player, "Your theft scanner is recharging.") return end
-				if ownerState and BayShield.IsActive(ownerState, now) then
-					message(player, "That bay is sealed.")
-					return
-				end
-				local cargo = take(slot)
-				EconomyService.Activity(state, "Steal", cargo)
-				setCarry(player, state, cargo)
-				if ownerState then
-					sync(owner, ownerState)
-					message(owner, player.DisplayName .. " stole " .. Catalog.name(cargo) .. ". Zap them to recover it!")
-				end
-				message(player, "Stolen cargo. Dock it before you get zapped!")
+				steals:Take(player, state, slot)
 				return
 			end
 			if not state.carry or slot.cargo or slot.reserved then return end
 			local cargo = state.carry
 			local source = clearSource(cargo)
+			if cargo.stolen then
+				EconomyService.Activity(state, "Steal", cargo)
+				cargo.stolen = nil
+			end
 			state.carry = nil
 			SkillService.Update(player, state)
 			dockCargo(slot, cargo)
@@ -412,7 +340,7 @@ local function join(player)
 				if state and state.carry then
 					local cargo = state.carry
 					setCarry(player, state, nil)
-					if cargo.source then returnCargo(cargo) else dropCargo(cargo, root.Position) end
+					if cargo.source then returnCargo(cargo) else steals:Drop(cargo, root.Position) end
 				end
 			end)
 		end
@@ -435,8 +363,7 @@ local function settleCargo(player, state)
 	for _, slot in ipairs(state.bay.slots) do
 		local cargo = slot.reserved
 		if cargo then
-			local prompt = drops[cargo]
-			if prompt then drops[cargo] = nil; prompt:Destroy() end
+			steals:CancelDrop(cargo)
 			returnCargo(cargo)
 		end
 	end
@@ -566,7 +493,7 @@ finishRaid = function(recovered)
 	else
 		local source = active.cargo.source
 		-- The escaping gremlin drops the loot at the portal for a final recovery window.
-		dropCargo(active.cargo, World.portal)
+		steals:Drop(active.cargo, World.portal)
 		if source and source.bay.owner then message(source.bay.owner, "Your cargo fell at the rift. Recover it before it expires.") end
 	end
 end
@@ -719,18 +646,7 @@ action.OnServerEvent:Connect(function(player, request, value)
 	state.zapReady = now + Catalog.zap.cooldown
 	player:SetAttribute("ZapReady", state.zapReady)
 	World.flash(root.Position, World.cyan, 7)
-	local target, targetState, targetPosition, best = nil, nil, nil, Catalog.zap.range
-	for other, otherState in pairs(profiles) do
-		local cargo = otherState.carry
-		if other ~= player and not otherState.loading and not otherState.closing and cargo and cargo.source
-			and not CrewService.Same(state, otherState) then
-			local otherRoot = rootOf(other)
-			local distance = otherRoot and (root.Position - otherRoot.Position).Magnitude
-			if distance and distance <= best and not BayShield.BlocksZap(profiles, root.Position, otherRoot.Position, now) then
-				target, targetState, targetPosition, best = other, otherState, otherRoot.Position, distance
-			end
-		end
-	end
+	local target, targetState, targetPosition, best = steals:NearestThief(player, state, root.Position, now)
 	if raid and (raid.position - root.Position).Magnitude <= best
 		and not BayShield.BlocksZap(profiles, root.Position, raid.position, now) then
 		World.flash(raid.position + Vector3.yAxis * 2, World.gold, 6)
@@ -748,7 +664,7 @@ action.OnServerEvent:Connect(function(player, request, value)
 		finishRaid(true)
 		announce(player.DisplayName .. " zapped the rift gremlin.")
 		if cargo then
-			dropCargo(cargo, position, true)
+			steals:Drop(cargo, position, true)
 			local owner = cargo.source and cargo.source.bay.owner
 			if owner then message(owner, "Raid cargo dropped. Recover it where the gremlin fell.") end
 		end
@@ -766,13 +682,7 @@ action.OnServerEvent:Connect(function(player, request, value)
 		sync(player, state)
 		message(player, (boss and "Boss" or "Gremlin") .. " repelled  /  +$" .. reward)
 	elseif target then
-		local cargo = targetState.carry
-		setCarry(target, targetState, nil)
-		dropCargo(cargo, targetPosition, true)
-		targetState.stunnedUntil = math.max(now + Catalog.zap.stun, targetState.stunnedUntil or 0)
-		targetState.stealReady = now + Catalog.zap.stealCooldown
-		SkillService.Update(target, targetState)
-		message(target, "You were zapped and dropped the stolen cargo.")
+		steals:Disarm(target, targetState, targetPosition, now)
 		message(player, "Stolen cargo dropped. Recover it with E.")
 	else
 		message(player, "Zap needs a gremlin or cargo thief within 22 studs.")
