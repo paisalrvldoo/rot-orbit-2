@@ -4,6 +4,7 @@ local BrainrotModel = require(script.Parent.BrainrotModel)
 local BillboardLabels = require(script.Parent.BillboardLabels)
 local Pedestals = require(script.Parent.Pedestals)
 local StationEffects = require(script.Parent.StationEffects)
+local ShelterDomes = require(script.Parent.ShelterDomes)
 
 local World = {
 	cyan = Color3.fromRGB(42, 236, 255),
@@ -137,7 +138,6 @@ function World.build()
 	cylinder(root, "Reactor Platform", Vector3.new(0, -.1, 0), 21, .4, dark)
 	cylinder(root, "Reactor Well", Vector3.new(0, .14, 0), 11, .17, Color3.fromRGB(15, 97, 121), neon)
 	local reactor = cylinder(root, "Reactor Core", Vector3.new(0, .24, 0), 3.4, .1, cyan, neon)
-	World.meteor, World.solarFlare = StationEffects.bind(root, World.part, reactor, grade)
 	ring(root, Vector3.new(0, 1.08, 0), Vector3.xAxis, Vector3.zAxis, 77, 40, .9, dark, nil, true)
 	ring(root, Vector3.new(0, 1.7, 0), Vector3.xAxis, Vector3.zAxis, 77, 40, .17, cyan, neon)
 	for i = 0, 11 do
@@ -220,6 +220,9 @@ function World.build()
 	World.portal = Vector3.new(43, .42, 0)
 	local gate = World.part(root, "Rift Beacon", Vector3.new(2, .35, 2), CFrame.new(World.portal), pink, neon)
 	World.billboard(gate, "GREMLIN RIFT", gold, 145, 23, 6.5, 46)
+	-- Gameplay reads these same centers and radii; visible boundaries match protection.
+	World.Domes = ShelterDomes.build(root, World.part, cylinder, World.billboard, Catalog.meteor.shelterRadius)
+	World.meteor, World.solarFlare = StationEffects.bind(root, World.part, reactor, grade, World.Domes)
 	return bays
 end
 
