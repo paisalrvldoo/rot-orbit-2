@@ -3,10 +3,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Orbit = ReplicatedStorage:WaitForChild("Orbit")
 local Catalog = require(Orbit:WaitForChild("Catalog"))
 local World = require(script:WaitForChild("World"))
+local CrewService = require(script:WaitForChild("CrewService"))
 
 local rng = Random.new()
 local bays = World.build()
 local profiles = {}
+local crews = CrewService.new(profiles)
 local waiting = {}
 local market = {}
 local drops = {}
@@ -53,6 +55,10 @@ local function sync(player, state)
 	player:SetAttribute("Rebirths", state.rebirths)
 	player:SetAttribute("Contract", state.contract)
 	player:SetAttribute("ContractProgress", state.progress)
+	player:SetAttribute("CrewId", state.crew or 0)
+	player:SetAttribute("CrewReady", state.crewReady or 0)
+	player:SetAttribute("PersonalScore", state.score or 0)
+	for _, slot in ipairs(state.bay.slots) do slot.prompt:SetAttribute("Crew", state.crew or 0) end
 	return rate
 end
 
@@ -150,9 +156,10 @@ local function assign(player)
 	bay.owner = player
 	local state = {
 		bay = bay, cash = 90, bank = 0, guide = 1, lockedUntil = 0, lockReady = 0, zapReady = 0,
-		level = 0, rebirths = 0, contract = 1, progress = 0, index = {},
+		level = 0, rebirths = 0, contract = 1, progress = 0, index = {}, crew = 0, score = 0,
 	}
 	profiles[player] = state
+	crews:Refresh()
 	player:SetAttribute("Index", "")
 	bay.header:SetAttribute("Owner", player.UserId)
 	for _, slot in ipairs(bay.slots) do slot.prompt:SetAttribute("Owner", player.UserId) end
@@ -213,6 +220,7 @@ for i, bay in ipairs(bays) do
 				local owner = bay.owner
 				local ownerState = owner and profiles[owner]
 				if not ownerState or not slot.cargo or state.carry then return end
+				if CrewService.Same(state, ownerState) then message(player, "Squad cargo is protected.") return end
 				if workspace:GetServerTimeNow() < ownerState.lockedUntil then
 					message(player, "That bay is sealed.")
 					return
@@ -232,6 +240,7 @@ for i, bay in ipairs(bays) do
 			local key = Catalog.discoveryKey(cargo)
 			if not state.index[key] then
 				state.index[key] = true
+				crews:Award(state, 2)
 				local keys = {}
 				for found in pairs(state.index) do table.insert(keys, found) end
 				player:SetAttribute("Index", table.concat(keys, ","))
@@ -281,6 +290,7 @@ Players.PlayerRemoving:Connect(function(player)
 		return
 	end
 	profiles[player] = nil
+	crews:Refresh()
 	local bay = state.bay
 	if state.carry then returnCargo(state.carry) end
 	for _, slot in ipairs(bay.slots) do
@@ -416,14 +426,17 @@ local function moveRaid(delta, now)
 	end
 end
 
-action.OnServerEvent:Connect(function(player, request)
+action.OnServerEvent:Connect(function(player, request, value)
 	local state, root = profiles[player], rootOf(player)
 	if not state or not root then return end
 	local now = workspace:GetServerTimeNow()
 	if request ~= "Zap" then
 		if now < (state.menuReady or 0) then return end
 		state.menuReady = now + .3
-		if request == "Upgrade" then
+		if request == "Crew" then
+			local _, words = crews:Select(state, value, raid ~= nil)
+			message(player, words)
+		elseif request == "Upgrade" then
 			local price = Catalog.upgrades[state.level + 1]
 			if not price then message(player, "Income upgrade is maxed.") return end
 			if state.cash < price then message(player, "Need $" .. price .. " to upgrade.") return end
@@ -480,7 +493,7 @@ action.OnServerEvent:Connect(function(player, request)
 	local target, targetState, best = nil, nil, 17
 	for other, otherState in pairs(profiles) do
 		local cargo = otherState.carry
-		if other ~= player and cargo and cargo.source then
+		if other ~= player and cargo and cargo.source and not CrewService.Same(state, otherState) then
 			local otherRoot = rootOf(other)
 			local distance = otherRoot and (root.Position - otherRoot.Position).Magnitude
 			if distance and distance < best then
@@ -492,6 +505,7 @@ action.OnServerEvent:Connect(function(player, request)
 		World.flash(raid.position + Vector3.yAxis * 2, World.gold, 6)
 		finishRaid(true)
 		state.cash += 35
+		crews:Award(state, 10)
 		sync(player, state)
 		announce(player.DisplayName .. " zapped the rift gremlin.")
 		message(player, "Gremlin repelled  /  +$35")

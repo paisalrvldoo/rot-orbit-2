@@ -98,14 +98,16 @@ local function refreshPrompt(prompt)
 	local mine = owner == player.UserId
 	local carrying = (player:GetAttribute("Carry") or "") ~= ""
 	local occupied = prompt:GetAttribute("Occupied")
+	local crew = player:GetAttribute("CrewId") or 0
+	local friendly = crew > 0 and prompt:GetAttribute("Crew") == crew
 	local usable = (kind == "Owner" and mine)
-		or (kind == "Slot" and owner ~= 0 and ((mine and not occupied and carrying) or (not mine and occupied and not carrying)))
+		or (kind == "Slot" and owner ~= 0 and ((mine and not occupied and carrying) or (not mine and not friendly and occupied and not carrying)))
 	prompt.MaxActivationDistance = usable and 9 or 0
 end
 local function watchPrompt(instance)
 	if not instance:IsA("ProximityPrompt") or not instance:GetAttribute("OrbitPrompt") then return end
 	prompts[instance] = true
-	for _, key in ipairs({ "Owner", "Occupied" }) do
+	for _, key in ipairs({ "Owner", "Occupied", "Crew" }) do
 		instance:GetAttributeChangedSignal(key):Connect(function() refreshPrompt(instance) end)
 	end
 	instance.Destroying:Connect(function() prompts[instance] = nil end)
@@ -190,7 +192,7 @@ title.Text = "STATION LOGBOOK"
 title.ZIndex = 3
 local close = button(menu, "×", UDim2.fromOffset(44, 44), UDim2.new(1, -51, 0, 6))
 close.ZIndex = 3
-local tabs = { "Index", "Upgrades", "Contracts" }
+local tabs = { "Index", "Upgrades", "Contracts", "Crews" }
 local active = "Index"
 local content = Instance.new("ScrollingFrame")
 content.Size = UDim2.new(1, -24, 1, -108)
@@ -297,7 +299,7 @@ refreshMenu = function()
 		confirmButton("REBIRTH   $" .. Catalog.rebirthCost(rebirths), "CONFIRM REBIRTH", "Rebirth")
 		line("Free a slot by scrapping your lowest earner for half its market price.", white, 43)
 		confirmButton("RECYCLE WEAKEST CARGO", "CONFIRM RECYCLE", "Recycle")
-	else
+	elseif active == "Contracts" then
 		local contract = Catalog.contracts[player:GetAttribute("Contract") or 1]
 		local progress = player:GetAttribute("ContractProgress") or 0
 		line(contract.title .. "   /   $" .. contract.reward .. " reward", gold)
@@ -305,6 +307,20 @@ refreshMenu = function()
 		if progress >= contract.goal then
 			menuRow("CLAIM REWARD").Activated:Connect(function() action:FireServer("Contract") end)
 		end
+	elseif active == "Crews" then
+		local current = player:GetAttribute("CrewId") or 0
+		line("Play Solo or join a squad", gold)
+		line("Squadmates cannot steal or zap each other's cargo. Scores last for this server: +2 per new discovery, +10 per gremlin zap.", white, 72)
+		line("Your defence score: " .. (player:GetAttribute("PersonalScore") or 0), gold)
+		menuRow(current == 0 and "SOLO  •  ACTIVE" or "PLAY SOLO").Activated:Connect(function() action:FireServer("Crew", 0) end)
+		for id, crew in ipairs(Catalog.crews) do
+			local points = workspace:GetAttribute("CrewScore" .. id) or 0
+			local members = workspace:GetAttribute("CrewMembers" .. id) or 0
+			local row = menuRow((current == id and "✓ " or "JOIN ") .. crew.name .. "  •  " .. points .. " pts / " .. members)
+			row.TextColor3 = crew.color
+			row.Activated:Connect(function() action:FireServer("Crew", id) end)
+		end
+		line("Crew changes recharge for 30s. Finish raids and recover missing cargo first.", white, 50)
 	end
 end
 
@@ -332,7 +348,7 @@ gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(layout)
 layout()
 
 for index, tab in ipairs(tabs) do
-	local tabButton = button(menu, tab, UDim2.new(1 / 3, -10, 0, 44), UDim2.new((index - 1) / 3, 7, 0, 52))
+	local tabButton = button(menu, tab, UDim2.new(1 / #tabs, -8, 0, 44), UDim2.new((index - 1) / #tabs, 4, 0, 52))
 	tabButton.ZIndex = 3
 	tabButtons[tab] = tabButton
 	tabButton.Activated:Connect(function() openMenu(tab) end)
@@ -349,8 +365,15 @@ menu:GetPropertyChangedSignal("Visible"):Connect(function()
 	zap.Visible = not menu.Visible
 	menuButton.Visible = not menu.Visible
 end)
-for _, key in ipairs({ "Index", "Upgrade", "Rebirths", "Contract", "ContractProgress" }) do
+for _, key in ipairs({ "Index", "Upgrade", "Rebirths", "Contract", "ContractProgress", "CrewId", "PersonalScore" }) do
 	player:GetAttributeChangedSignal(key):Connect(refreshMenu)
+end
+player:GetAttributeChangedSignal("CrewId"):Connect(function()
+	for prompt in pairs(prompts) do refreshPrompt(prompt) end
+end)
+for id in ipairs(Catalog.crews) do
+	workspace:GetAttributeChangedSignal("CrewScore" .. id):Connect(refreshMenu)
+	workspace:GetAttributeChangedSignal("CrewMembers" .. id):Connect(refreshMenu)
 end
 
 UserInputService.InputBegan:Connect(function(input, processed)

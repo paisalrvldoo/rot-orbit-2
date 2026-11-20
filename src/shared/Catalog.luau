@@ -58,6 +58,11 @@ function Catalog.rollMutation(random)
 end
 
 Catalog.upgrades = { 240, 620, 1550, 3800, 8000 }
+Catalog.crews = {
+	{ name = "Ion Runners", color = Color3.fromRGB(94, 237, 255) },
+	{ name = "Solar Union", color = Color3.fromRGB(255, 224, 102) },
+	{ name = "Void Scouts", color = Color3.fromRGB(231, 103, 255) },
+}
 Catalog.contracts = {
 	{ title = "Cargo Shift", goal = 3, reward = 180, detail = "Dock 3 brainrots" },
 	{ title = "Credit Run", goal = 250, reward = 260, detail = "Collect 250 banked credits" },
