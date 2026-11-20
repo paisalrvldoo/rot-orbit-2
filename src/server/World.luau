@@ -1,5 +1,5 @@
-local Lighting = game:GetService("Lighting")
 local Catalog = require(game:GetService("ReplicatedStorage"):WaitForChild("Orbit"):WaitForChild("Catalog"))
+local Backdrop = require(script.Parent.OrbitBackdrop)
 
 local World = {
 	cyan = Color3.fromRGB(42, 236, 255),
@@ -48,9 +48,10 @@ local function bar(parent, a, b, width, color, material, collide)
 		CFrame.lookAt((a + b) / 2, b), color, material, collide)
 end
 
-local function ring(parent, center, u, v, radius, count, width, color, material, collide)
+local function ring(parent, center, u, v, radius, count, width, color, material, collide, sweep, start)
+	sweep, start = sweep or math.pi * 2, start or 0
 	for i = 0, count - 1 do
-		local a, b = i * math.pi * 2 / count, (i + 1) * math.pi * 2 / count
+		local a, b = start + i * sweep / count, start + (i + 1) * sweep / count
 		local function point(angle)
 			return center + radius * (u * math.cos(angle) + v * math.sin(angle))
 		end
@@ -118,58 +119,11 @@ function World.prompt(part, action, object, key, hold, distance)
 end
 
 function World.build()
-	Lighting.ClockTime = 0
-	Lighting.Brightness = 1.45
-	Lighting.Ambient = Color3.fromRGB(24, 34, 60)
-	Lighting.OutdoorAmbient = Color3.fromRGB(12, 19, 39)
-	Lighting.ExposureCompensation = -.08
-	Lighting.GlobalShadows = true
-	Lighting.ShadowSoftness = .28
-	Lighting.EnvironmentDiffuseScale = .22
-	Lighting.EnvironmentSpecularScale = .48
-	Lighting.Technology = Enum.Technology.Future
-
-	local glow = Instance.new("BloomEffect")
-	glow.Name = "Orbit Bloom"
-	glow.Intensity = .92
-	glow.Size = 38
-	glow.Threshold = .82
-	glow.Parent = Lighting
-
-	local grade = Instance.new("ColorCorrectionEffect")
-	grade.Name = "Orbit Color Grade"
-	grade.Brightness = -.025
-	grade.Contrast = .12
-	grade.Saturation = .12
-	grade.TintColor = Color3.fromRGB(201, 224, 255)
-	grade.Parent = Lighting
-
-	local atmosphere = Instance.new("Atmosphere")
-	atmosphere.Name = "Orbit Deep Space"
-	atmosphere.Color = Color3.fromRGB(14, 20, 42)
-	atmosphere.Decay = Color3.fromRGB(2, 4, 13)
-	atmosphere.Density = .025
-	atmosphere.Glare = 0
-	atmosphere.Haze = .08
-	atmosphere.Offset = .08
-	atmosphere.Parent = Lighting
-
 	local root = Instance.new("Folder")
 	root.Name = "RotOrbitStation"
 	root.Parent = workspace
 	World.root = root
-	local rng = Random.new(827)
-	for i = 1, 72 do
-		local theta = rng:NextNumber(0, math.pi * 2)
-		local pos = Vector3.new(math.cos(theta) * 300, rng:NextNumber(-45, 175), math.sin(theta) * 300)
-		local size = i % 11 == 0 and rng:NextNumber(.8, 1.35) or rng:NextNumber(.22, .62)
-		World.part(root, "Star", Vector3.one * size, CFrame.new(pos), i % 5 == 0 and cyan or ice, neon, false, Enum.PartType.Ball)
-	end
-	local planet = Vector3.new(-92, 57, -129)
-	World.part(root, "Ion Giant", Vector3.one * 33, CFrame.new(planet), Color3.fromRGB(29, 173, 201),
-		Enum.Material.Glass, false, Enum.PartType.Ball)
-	ring(root, planet, Vector3.new(.87, .49, 0), Vector3.zAxis, 24, 24, .22, cyan, neon)
-	ring(root, planet, Vector3.new(.87, .49, 0), Vector3.zAxis, 27, 24, .14, gold, neon)
+	Backdrop.build(root, World.part, ring, cyan, gold, pink, ice)
 
 	cylinder(root, "Station Deck", Vector3.new(0, -1.2, 0), 156, 2.4, ink, Enum.Material.Metal, true)
 	cylinder(root, "Hull", Vector3.new(0, -4.2, 0), 151, 3, dark, Enum.Material.Metal)
@@ -185,15 +139,18 @@ function World.build()
 		World.part(root, "Rail Marker", Vector3.new(.3, .28, .3), CFrame.new(position + Vector3.new(0, 1.28, 0)),
 			i % 3 == 0 and gold or cyan, neon)
 	end
-	for _, spec in ipairs({ { 28.8, cyan }, { 29.8, dark }, { 34.2, dark }, { 35.2, gold } }) do
-		ring(root, Vector3.new(0, .12, 0), Vector3.xAxis, Vector3.zAxis, spec[1], 48,
-			spec[2] == dark and .75 or .23, spec[2], spec[2] == dark and Enum.Material.Metal or neon)
+	-- Layered disks give the inner road edge a continuous curve with three parts.
+	cylinder(root, "Market Annulus", Vector3.new(0, .01, 0), 70.9, .05, dark, Enum.Material.Metal)
+	cylinder(root, "Inner Market Rail", Vector3.new(0, .04, 0), 57.6, .04, cyan, neon)
+	cylinder(root, "Reactor Concourse", Vector3.new(0, .065, 0), 56.45, .03, ink, Enum.Material.Metal)
+	for i, color in ipairs({ ice, cyan, pink, cyan, ice, gold, cyan, gold }) do
+		ring(root, Vector3.new(0, .11, 0), Vector3.xAxis, Vector3.zAxis, 35.3, 8, .38,
+			color, neon, false, math.pi / 4, (i - 1) * math.pi / 4)
 	end
-	ring(root, Vector3.new(0, .38, 0), Vector3.xAxis, Vector3.zAxis, 33.5, 40, .3, ice, neon)
 	for i = 0, 19 do
 		local angle = i * math.pi / 10
 		local axis = Vector3.new(math.cos(angle), 0, math.sin(angle))
-		local y = Vector3.new(0, .06, 0)
+		local y = Vector3.new(0, .10, 0)
 		bar(root, axis * 12 + y, axis * 25.5 + y, .075, i % 3 == 0 and pink or cyan, neon)
 		bar(root, axis * 36.8 + y, axis * 43 + y, .10, i % 3 == 0 and gold or cyan, neon)
 	end
@@ -201,9 +158,10 @@ function World.build()
 		World.part(root, "Marquee Support", Vector3.new(.55, 12.5, .75), CFrame.new(x, 6.25, -5), cyan, Enum.Material.Metal)
 		World.part(root, "Marquee Beacon", Vector3.new(.9, .65, .9), CFrame.new(x, 12.7, -5), ice, neon)
 	end
-	World.part(root, "Marquee Backplate", Vector3.new(35, 8.5, .34), CFrame.new(0, 8.35, -5.35), ink, Enum.Material.Metal)
-	sign(root, CFrame.new(0, 9.4, -5), 32, 5.5, "ROT ORBIT", ice)
-	sign(root, CFrame.new(0, 5.9, -5), 24, 1.5, "ORBIT MARKET  /  DOCKING RING", gold)
+	local marquee = CFrame.new(0, 9.05, -5) * CFrame.Angles(math.rad(-13), 0, 0)
+	sign(root, marquee, 34, 5.8, "ROT ORBIT", ice)
+	World.part(root, "Marquee Gold Crown", Vector3.new(35, .22, .8), marquee * CFrame.new(0, 3.1, 0), gold, neon)
+	World.part(root, "Marquee Cyan Sill", Vector3.new(35, .22, .8), marquee * CFrame.new(0, -3.1, 0), cyan, neon)
 
 	local bays = {}
 	for i = 1, 6 do
