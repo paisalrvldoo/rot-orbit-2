@@ -17,8 +17,8 @@ local ink = Color3.fromRGB(9, 13, 27)
 local ice = Color3.fromRGB(226, 252, 255)
 local neon = Enum.Material.Neon
 
-function World.part(parent, name, size, cf, color, material, collide, shape)
-	local part = Instance.new("Part")
+function World.part(parent, name, size, cf, color, material, collide, shape, className)
+	local part = Instance.new(className or "Part")
 	part.Name = name
 	part.Anchored = true
 	part.Size = size
@@ -29,7 +29,7 @@ function World.part(parent, name, size, cf, color, material, collide, shape)
 	part.CanTouch = false
 	part.CanQuery = part.CanCollide
 	part.CastShadow = part.CanCollide
-	if shape then part.Shape = shape end
+	if shape and part:IsA("Part") then part.Shape = shape end
 	part.Parent = parent
 	return part
 end
