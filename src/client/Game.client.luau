@@ -7,6 +7,7 @@ local player = Players.LocalPlayer
 local orbit = ReplicatedStorage:WaitForChild("Orbit")
 local Catalog = require(orbit:WaitForChild("Catalog"))
 local ScreenshotMode = require(orbit:WaitForChild("ScreenshotMode"))
+local HudLayout = require(script.Parent:WaitForChild("HudLayout"))
 local action = orbit:WaitForChild("Action")
 local menuOpen = false
 
@@ -20,6 +21,7 @@ local ink = Color3.fromRGB(10, 17, 32)
 local cyan = Color3.fromRGB(94, 237, 255)
 local gold = Color3.fromRGB(255, 224, 102)
 local white = Color3.fromRGB(234, 247, 255)
+local muted = Color3.fromRGB(147, 174, 190)
 
 local function number(value)
 	value = value or 0
@@ -157,14 +159,20 @@ workspace:GetAttributeChangedSignal("Raid"):Connect(renderIncident)
 workspace:GetAttributeChangedSignal("Event"):Connect(renderIncident)
 renderIncident()
 local function updateSkills()
+	local compactLabels = UserInputService.TouchEnabled or (gui.AbsoluteSize.X > gui.AbsoluteSize.Y and gui.AbsoluteSize.Y < 500)
 	local cooldown = math.ceil((player:GetAttribute("ZapReady") or 0) - workspace:GetServerTimeNow())
-	zap.Text = cooldown > 0 and "ZAP  " .. cooldown .. "s" or (UserInputService.TouchEnabled and "ZAP" or "ZAP  [Q]")
+	zap.Text = cooldown > 0 and "ZAP  " .. cooldown .. "s" or (compactLabels and "ZAP" or "ZAP  [Q]")
 	local now = workspace:GetServerTimeNow()
 	local blinkCooldown = math.max(0, math.ceil((player:GetAttribute("BlinkReady") or 0) - now))
 	local sprintCooldown = math.max(0, math.ceil((player:GetAttribute("SprintReady") or 0) - now))
-	blink.Text = blinkCooldown > 0 and "BLINK " .. blinkCooldown .. "s" or (UserInputService.TouchEnabled and "BLINK" or "BLINK [F]")
-	sprint.Text = now < (player:GetAttribute("SprintUntil") or 0) and "SPRINTING"
-		or (sprintCooldown > 0 and "RUN " .. sprintCooldown .. "s" or (UserInputService.TouchEnabled and "SPRINT" or "RUN [SHIFT]"))
+	blink.Text = blinkCooldown > 0 and "BLINK " .. blinkCooldown .. "s" or (compactLabels and "BLINK" or "BLINK [F]")
+	sprint.Text = now < (player:GetAttribute("SprintUntil") or 0) and "RUNNING"
+		or (sprintCooldown > 0 and "RUN " .. sprintCooldown .. "s" or (compactLabels and "SPRINT" or "RUN [SHIFT]"))
+	for _, pair in ipairs({ { zap, cooldown }, { blink, blinkCooldown }, { sprint, sprintCooldown } }) do
+		local ready = pair[2] <= 0 and player:GetAttribute("Bay") ~= nil and not player:GetAttribute("Loading")
+		pair[1].Interactable = ready
+		pair[1].TextColor3 = ready and cyan or muted
+	end
 end
 
 local function render()
@@ -191,15 +199,20 @@ local function render()
 	end
 end
 
-local fade
+local fades = {}
+local menuNotice
 player:GetAttributeChangedSignal("OrbitMessageId"):Connect(function()
-	if fade then fade:Cancel() end
-	notice.Text = player:GetAttribute("OrbitMessage") or ""
-	notice.TextTransparency = 0
-	notice.TextStrokeTransparency = .25
-	fade = TweenService:Create(notice, TweenInfo.new(.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 3),
-		{ TextTransparency = 1, TextStrokeTransparency = 1 })
-	fade:Play()
+	for _, fade in ipairs(fades) do fade:Cancel() end
+	table.clear(fades)
+	for _, target in ipairs({ notice, menuNotice }) do
+		target.Text = player:GetAttribute("OrbitMessage") or ""
+		target.TextTransparency = 0
+		target.TextStrokeTransparency = .25
+		local fade = TweenService:Create(target, TweenInfo.new(.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 4),
+			{ TextTransparency = 1, TextStrokeTransparency = 1 })
+		table.insert(fades, fade)
+		fade:Play()
+	end
 end)
 for _, key in ipairs({ "Cash", "Unclaimed", "Income", "Carry", "Bay", "Guide", "LockedUntil" }) do
 	player:GetAttributeChangedSignal(key):Connect(render)
@@ -243,7 +256,7 @@ local tabs = { "Index", "Upgrades", "Contracts", "Crews" }
 local active = "Index"
 local screenshotScene
 local content = Instance.new("ScrollingFrame")
-content.Size = UDim2.new(1, -24, 1, -108)
+content.Size = UDim2.new(1, -24, 1, -166)
 content.Position = UDim2.fromOffset(12, 101)
 content.AutomaticCanvasSize = Enum.AutomaticSize.Y
 content.CanvasSize = UDim2.fromOffset(0, 0)
@@ -257,6 +270,11 @@ content.Parent = menu
 local list = Instance.new("UIListLayout")
 list.Padding = UDim.new(0, 6)
 list.Parent = content
+menuNotice = label(menu, UDim2.new(1, -24, 0, 50), UDim2.new(0, 12, 1, -58), gold, 14)
+menuNotice.Text = ""
+menuNotice.TextWrapped = true
+menuNotice.TextTruncate = Enum.TextTruncate.None
+menuNotice.ZIndex = 4
 
 local tabButtons = {}
 local confirmation
@@ -277,6 +295,8 @@ end
 local function menuRow(words)
 	local row = button(content, words, UDim2.new(1, -9, 0, 46), UDim2.fromOffset(0, 0))
 	row.ZIndex = 4
+	row.Interactable = not player:GetAttribute("Loading")
+	row.TextTransparency = row.Interactable and 0 or .45
 	return row
 end
 
@@ -287,7 +307,6 @@ local function confirmButton(words, confirm, request)
 		if confirmation == request then
 			confirmation = nil
 			action:FireServer(request)
-			menu.Visible = false
 		else
 			confirmation = request
 			refreshMenu()
@@ -343,7 +362,6 @@ refreshMenu = function()
 		if cost then
 			menuRow("UPGRADE   $" .. cost).Activated:Connect(function()
 				action:FireServer("Upgrade")
-				menu.Visible = false
 			end)
 		end
 		for _, kind in ipairs({ "Speed", "Shield" }) do
@@ -406,23 +424,30 @@ end
 
 local function layout()
 	local size = gui.AbsoluteSize
-	local short = size.Y < 500
-	wallet.Size = UDim2.fromOffset(math.min(280, math.max(180, size.X - 24)), short and 58 or 68)
-	bank.Size = UDim2.new(1, -20, 0, short and 20 or 28)
-	guideBox.Position = UDim2.new(.5, 0, 0, short and 76 or 86)
-	guideBox.Size = UDim2.new(1, -24, 0, short and 40 or 56)
-	notice.Position = UDim2.new(.5, 0, 0, short and 118 or 146)
-	notice.Size = UDim2.new(1, -32, 0, short and 32 or 44)
-	incident.Position = UDim2.new(.5, 0, 0, short and 152 or 192)
+	if size.X <= 0 or size.Y <= 0 then return end
+	local geometry = HudLayout.Calculate(size.X, size.Y)
+	wallet.Size = UDim2.fromOffset(geometry.walletWidth, geometry.walletHeight)
+	wallet.Position = UDim2.fromOffset(geometry.walletX, geometry.walletY)
+	bank.Size = UDim2.new(1, -20, 0, geometry.walletHeight - 36)
+	guideBox.Position = UDim2.fromOffset(geometry.guideX, geometry.guideY)
+	guideBox.Size = UDim2.fromOffset(geometry.guideWidth, geometry.guideHeight)
+	notice.Position = UDim2.new(.5, 0, 0, geometry.noticeY)
+	notice.Size = UDim2.new(1, -32, 0, geometry.noticeHeight)
+	incident.Position = UDim2.new(.5, 0, 0, geometry.incidentY)
+	incident.Size = UDim2.new(1, -24, 0, geometry.incidentHeight)
 	menu.Size = UDim2.new(1, -24, 1, -24)
-	menuButton.Text = UserInputService.TouchEnabled and "LOGBOOK" or "LOGBOOK  [I]"
+	menuButton.Text = (UserInputService.TouchEnabled or geometry.landscape) and "LOGBOOK" or "LOGBOOK  [I]"
+	menuButton.AnchorPoint = Vector2.zero
+	menuButton.Size = UDim2.fromOffset(geometry.menuWidth, geometry.controlHeight)
+	menuButton.Position = UDim2.fromOffset(geometry.menuX, geometry.menuY)
 	title.TextSize = size.X < 400 and 17 or 21
-	local horizontal = short and size.X >= 600
-	skillBar.Size = UDim2.fromOffset(horizontal and 316 or 100, horizontal and 48 or 160)
-	skillBar.Position = horizontal and UDim2.new(.5, 0, 1, -122) or UDim2.new(1, -10, .57, 0)
-	skillBar.AnchorPoint = horizontal and Vector2.new(.5, 0) or Vector2.new(1, .5)
+	skillBar.AnchorPoint = Vector2.zero
+	skillBar.Size = UDim2.fromOffset(geometry.landscape and 3 * geometry.controlWidth + 16 or geometry.controlWidth, geometry.landscape and 48 or 160)
+	skillBar.Position = UDim2.fromOffset(geometry.skillsX, geometry.skillsY)
 	for index, control in ipairs({ zap, blink, sprint }) do
-		control.Position = UDim2.fromOffset(horizontal and (index - 1) * 108 or 0, horizontal and 0 or (index - 1) * 56)
+		control.Size = UDim2.fromOffset(geometry.controlWidth, geometry.controlHeight)
+		control.TextSize = geometry.controlWidth < 90 and 14 or 15
+		control.Position = UDim2.fromOffset(geometry.landscape and (index - 1) * (geometry.controlWidth + 8) or 0, geometry.landscape and 0 or (index - 1) * 56)
 	end
 end
 gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(layout)
@@ -448,12 +473,13 @@ menu:GetPropertyChangedSignal("Visible"):Connect(function()
 	skillBar.Visible = not menu.Visible
 	menuButton.Visible = not menu.Visible
 end)
-for _, key in ipairs({ "Index", "Upgrade", "SpeedUpgrade", "ShieldUpgrade", "Rebirths", "Contract", "ContractProgress", "CrewId", "PersonalScore", "SaveStatus", "IndexMilestone" }) do
+for _, key in ipairs({ "Index", "Upgrade", "SpeedUpgrade", "ShieldUpgrade", "Rebirths", "Contract", "ContractProgress", "CrewId", "PersonalScore", "SaveStatus", "IndexMilestone", "Cash" }) do
 	player:GetAttributeChangedSignal(key):Connect(refreshMenu)
 end
 player:GetAttributeChangedSignal("Loading"):Connect(function()
 	for prompt in pairs(prompts) do refreshPrompt(prompt) end
 	render()
+	refreshMenu()
 end)
 player:GetAttributeChangedSignal("CrewId"):Connect(function()
 	for prompt in pairs(prompts) do refreshPrompt(prompt) end
