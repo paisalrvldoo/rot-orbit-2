@@ -62,6 +62,7 @@ function Backdrop.build(root, part, arc, cyan, gold, pink, ice)
 		arc(backdrop, Vector3.new(0, 46, 0), tilt2.RightVector, tilt2.LookVector, spec[1], 15, .22,
 			spec[2], neon, false, 1.65, -.75 + i * .13)
 	end
+	return grade
 end
 
 return Backdrop
