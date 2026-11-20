@@ -299,11 +299,13 @@ function GremlinRaid:Step(delta, now)
 	local wave, changed = self.wave, false
 	if wave and not wave.spawned and now >= wave.spawnAt then
 		wave.spawned = true
-		local count = config.waveSize + math.min(4, #wave.targets - 1)
-		for index = 1, count do
-			local owner = wave.targets[(index - 1) % #wave.targets + 1]
-			local spawn = self.world.portal + Vector3.zAxis * ((index - (count + 1) / 2) * 2)
-			if self.profiles[owner] and not self.profiles[owner].closing and not self.profiles[owner].loading then
+		-- Recheck targets after the warning so the captain keeps a valid first bay.
+		wave.targets = self:Targets(false)
+		if #wave.targets > 0 then
+			local count = config.waveSize + math.min(4, #wave.targets - 1)
+			for index = 1, count do
+				local owner = wave.targets[(index - 1) % #wave.targets + 1]
+				local spawn = self.world.portal + Vector3.zAxis * ((index - (count + 1) / 2) * 2)
 				self:Spawn(owner, spawn, now, wave, wave.captain and index == 1)
 				wave.remaining += 1
 			end
