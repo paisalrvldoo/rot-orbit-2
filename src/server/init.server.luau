@@ -12,6 +12,9 @@ local DataService = require(script:WaitForChild("DataService"))
 local SkillService = require(script:WaitForChild("SkillService"))
 local EconomyService = require(script:WaitForChild("EconomyService"))
 local MeteorSolarEvents = require(script:WaitForChild("MeteorSolarEvents"))
+local RivalService = require(script:WaitForChild("RivalService"))
+local GuideService = require(script:WaitForChild("GuideService"))
+local ConveyorService = require(script:WaitForChild("ConveyorService"))
 local ScreenshotMode = require(Orbit:WaitForChild("ScreenshotMode"))
 local data = DataService.new()
 
@@ -66,6 +69,7 @@ local function near(player, position, distance)
 end
 
 local function sync(player, state)
+	state.guide = GuideService.Stage(state)
 	local rate = EconomyService.Rate(state, workspace:GetAttribute("IncomeMultiplier") or 1)
 	player:SetAttribute("Cash", state.cash)
 	player:SetAttribute("Unclaimed", state.bank)
@@ -155,6 +159,9 @@ local function returnCargo(cargo)
 	end
 end
 
+local rivals = RivalService.new({ bays = bays, profiles = profiles, world = World, random = rng,
+	clearSource = clearSource, updateSlot = updateSlot, dockCargo = dockCargo })
+
 local function dropPurchased(cargo, position)
 	if not position or Vector3.new(position.X, 0, position.Z).Magnitude > 75 then
 		cargo.model:Destroy()
@@ -229,6 +236,7 @@ local function assign(player)
 		if not candidate.owner then bay = candidate break end
 	end
 	if not bay then return false end
+	rivals:Clear(bay)
 	bay.owner = player
 	local state = {
 		bay = bay, cash = 90, bank = 0, guide = 1, lockedUntil = 0, lockReady = 0, zapReady = 0,
@@ -326,18 +334,23 @@ for i, bay in ipairs(bays) do
 			if state.bay ~= bay then
 				local owner = bay.owner
 				local ownerState = owner and profiles[owner]
-				if not ownerState or ownerState.loading or ownerState.closing or not slot.cargo or state.carry then return end
+				if not slot.cargo or state.carry then return end
+				if not bay.rival and (not ownerState or ownerState.loading or ownerState.closing) then return end
+				local now = workspace:GetServerTimeNow()
+				if now < (state.stunnedUntil or 0) then message(player, "Wait for the stun to end before stealing.") return end
 				if CrewService.Same(state, ownerState) then message(player, "Squad cargo is protected.") return end
 				if not EconomyService.FreeSlot(state) then message(player, "Recycle cargo to free a docking slot first.") return end
 				if workspace:GetServerTimeNow() < (state.stealReady or 0) then message(player, "Your theft scanner is recharging.") return end
-				if workspace:GetServerTimeNow() < ownerState.lockedUntil then
+				if ownerState and now < ownerState.lockedUntil then
 					message(player, "That bay is sealed.")
 					return
 				end
 				local cargo = take(slot)
 				setCarry(player, state, cargo)
-				sync(owner, ownerState)
-				message(owner, player.DisplayName .. " stole " .. Catalog.name(cargo) .. ". Zap them to recover it!")
+				if ownerState then
+					sync(owner, ownerState)
+					message(owner, player.DisplayName .. " stole " .. Catalog.name(cargo) .. ". Zap them to recover it!")
+				end
 				message(player, "Stolen cargo. Dock it before you get zapped!")
 				return
 			end
@@ -367,6 +380,14 @@ for i, bay in ipairs(bays) do
 		end)
 	end
 end
+
+rivals:Restock()
+task.spawn(function()
+	while not serverClosing do
+		task.wait(45)
+		if not World.root:GetAttribute("ScreenshotFrozen") then rivals:Restock() end
+	end
+end)
 
 local function join(player)
 	if not assign(player) then
@@ -476,17 +497,9 @@ task.spawn(function()
 end)
 
 local themes = Catalog.marketThemes
+local conveyor = ConveyorService.new(rng, profiles)
 local function roll(index, first)
-	local tier = themes[index]
-	if index == #themes then
-		local chance = rng:NextNumber()
-		if chance < Catalog.secretChance then tier = 8
-		elseif chance < Catalog.secretChance + Catalog.cosmicChance then tier = 7 end
-	end
-	local choices = Catalog.byTier[tier]
-	local id = first and index == 1 and 1 or choices[rng:NextInteger(1, #choices)]
-	local mutation = not first and index ~= 1 and Catalog.rollMutation(rng) or 1
-	local cargo = { id = id, mutation = mutation }
+	local cargo = conveyor:Roll(index, first)
 	cargo.model = World.figure(cargo, World.root)
 	return cargo
 end
@@ -500,11 +513,19 @@ end
 local function stock(offer, first)
 	local cargo = roll(offer.index, first)
 	offer.cargo = cargo
-	offer.refresh = os.clock() + rng:NextNumber(49, 68)
+	local lifetime = math.pi * 2 / .12
+	offer.refresh = os.clock() + lifetime
+	cargo.model:SetAttribute("OfferExpiresAt", workspace:GetServerTimeNow() + lifetime)
 	placeOffer(offer)
 	local cost = Catalog.price(cargo)
 	local rate = Catalog.rate(cargo)
 	local rarity = Catalog.tiers[Catalog.entries[cargo.id].tier]
+	if not first and Catalog.entries[cargo.id].tier >= 4 then
+		World.root:SetAttribute("ArrivalColor", rarity.color)
+		World.root:SetAttribute("ArrivalTime", workspace:GetServerTimeNow())
+		workspace:SetAttribute("RareCargo", rarity.name:upper() .. " ON THE RING / " .. Catalog.name(cargo))
+		workspace:SetAttribute("RareCargoEndsAt", workspace:GetServerTimeNow() + 8)
+	end
 	local anchor = cargo.model.PrimaryPart
 	local label = World.billboard(anchor, rarity.name:upper() .. "   •   +" .. rate .. "/s", rarity.color, 158, 19, 4.2, 28)
 	local prompt = World.prompt(anchor, "Buy  $" .. cost, Catalog.name(cargo), Enum.KeyCode.E, .16, 10)
@@ -522,7 +543,7 @@ local function stock(offer, first)
 		setCarry(player, state, cargo)
 		sync(player, state)
 		message(player, "Bought " .. Catalog.name(cargo) .. ". Head to Bay " .. state.bay.number .. ".")
-		task.delay(3, stock, offer, false)
+		offer.refresh = os.clock() + 3
 	end)
 end
 
@@ -755,6 +776,7 @@ task.spawn(function()
 		local delta = math.min(now - last, .35)
 		last = now
 		for _, offer in ipairs(market) do
+			if World.root:GetAttribute("ScreenshotFrozen") then continue end
 			offer.angle = (offer.angle + delta * .12) % (math.pi * 2)
 			if offer.cargo then
 				if now >= offer.refresh then
@@ -771,6 +793,8 @@ task.spawn(function()
 					end
 				end
 				placeOffer(offer)
+			elseif now >= offer.refresh then
+				stock(offer, false)
 			end
 		end
 		for player, state in pairs(profiles) do
@@ -778,7 +802,7 @@ task.spawn(function()
 			if root then state.carry.model:PivotTo(root.CFrame * CFrame.new(0, -.85, -2.6)) end
 		end
 		local serverNow = workspace:GetServerTimeNow()
-		moveRaid(delta, serverNow)
+		if not World.root:GetAttribute("ScreenshotFrozen") then moveRaid(delta, serverNow) end
 		weather:Step(serverNow)
 	end
 end)

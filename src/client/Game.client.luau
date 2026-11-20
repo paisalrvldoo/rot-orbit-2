@@ -130,14 +130,14 @@ local function refreshPrompt(prompt)
 	local friendly = crew > 0 and prompt:GetAttribute("Crew") == crew
 	local sealed = workspace:GetServerTimeNow() < (prompt:GetAttribute("LockedUntil") or 0)
 	local usable = not player:GetAttribute("Loading") and ((kind == "Owner" and mine)
-		or (kind == "Slot" and owner ~= 0 and ((mine and not occupied and carrying) or (not mine and not friendly and not sealed and occupied and not carrying)))
+		or (kind == "Slot" and (owner ~= 0 or prompt:GetAttribute("Rival")) and ((mine and not occupied and carrying) or (not mine and not friendly and not sealed and occupied and not carrying)))
 	)
 	prompt.MaxActivationDistance = usable and 9 or 0
 end
 local function watchPrompt(instance)
 	if not instance:IsA("ProximityPrompt") or not instance:GetAttribute("OrbitPrompt") then return end
 	prompts[instance] = true
-	for _, key in ipairs({ "Owner", "Occupied", "Crew", "LockedUntil" }) do
+	for _, key in ipairs({ "Owner", "Occupied", "Crew", "LockedUntil", "Rival" }) do
 		instance:GetAttributeChangedSignal(key):Connect(function() refreshPrompt(instance) end)
 	end
 	instance.Destroying:Connect(function() prompts[instance] = nil end)
