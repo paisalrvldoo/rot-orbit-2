@@ -32,6 +32,8 @@ function RivalService:Restock()
 			self.world.title(bay, "BAY " .. bay.number .. "  /  RIVAL CREW")
 			for position, slot in ipairs(bay.slots) do
 				slot.prompt:SetAttribute("Rival", true)
+				slot.prompt:SetAttribute("Crew", 0)
+				slot.prompt:SetAttribute("LockedUntil", 0)
 				if position <= 3 and not slot.cargo and not slot.reserved then
 					local tier = math.min(6, position + math.floor(progression / 2))
 					local choices = Catalog.byTier[tier]

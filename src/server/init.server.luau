@@ -15,6 +15,7 @@ local MeteorSolarEvents = require(script:WaitForChild("MeteorSolarEvents"))
 local RivalService = require(script:WaitForChild("RivalService"))
 local GuideService = require(script:WaitForChild("GuideService"))
 local ConveyorService = require(script:WaitForChild("ConveyorService"))
+local ScreenshotService = require(script:WaitForChild("ScreenshotService"))
 local ScreenshotMode = require(Orbit:WaitForChild("ScreenshotMode"))
 local data = DataService.new()
 
@@ -30,23 +31,7 @@ local raidCount = 0
 local finishRaid
 local serverClosing = false
 local action = network.Action
-local screenshot = network.Screenshot
-
-if RunService:IsStudio() then
-	local previews = {}
-	ScreenshotMode.Configure(function(scene, target)
-		if previews[target] then previews[target]:Destroy(); previews[target] = nil end
-		if scene == "Raid" then
-			local model = World.gremlin()
-			model:PivotTo(CFrame.lookAt(World.portal + Vector3.new(-4, 0, 4), Vector3.new(0, World.portal.Y, 0)))
-			previews[target] = model
-			task.delay(25, function()
-				if previews[target] == model then model:Destroy(); previews[target] = nil end
-			end)
-		end
-		screenshot:FireClient(target, scene)
-	end)
-end
+local screenshotService
 
 local function message(player, words)
 	player:SetAttribute("OrbitMessage", words)
@@ -171,6 +156,7 @@ local function dropPurchased(cargo, position)
 	local prompt = World.prompt(cargo.model.PrimaryPart, "Recover Cargo", Catalog.name(cargo), Enum.KeyCode.E, .32)
 	drops[cargo] = prompt
 	prompt.Triggered:Connect(function(player)
+		if World.root:GetAttribute("ScreenshotFrozen") then return end
 		local state = profiles[player]
 		if drops[cargo] ~= prompt or not state or state.loading or state.closing or state.carry
 			or not near(player, cargo.model.PrimaryPart.Position, 10) then return end
@@ -291,6 +277,7 @@ for i, bay in ipairs(bays) do
 	bay.collectPrompt = collect
 	collect:SetAttribute("OrbitPrompt", "Owner")
 	collect.Triggered:Connect(function(player)
+		if World.root:GetAttribute("ScreenshotFrozen") then return end
 		local state = profiles[player]
 		if not state or state.loading or state.closing or state.bay ~= bay or not near(player, bay.bank.Position, 10) then return end
 		if state.bank <= 0 then message(player, "Dock a brainrot to start earning.") return end
@@ -306,6 +293,7 @@ for i, bay in ipairs(bays) do
 	bay.lockPrompt = lock
 	lock:SetAttribute("OrbitPrompt", "Owner")
 	lock.Triggered:Connect(function(player)
+		if World.root:GetAttribute("ScreenshotFrozen") then return end
 		local state = profiles[player]
 		if not state or state.loading or state.closing or state.bay ~= bay or not near(player, bay.lock.Position, 10) then return end
 		local now = workspace:GetServerTimeNow()
@@ -329,6 +317,7 @@ for i, bay in ipairs(bays) do
 		prompt:SetAttribute("OrbitPrompt", "Slot")
 		updateSlot(slot)
 		prompt.Triggered:Connect(function(player)
+			if World.root:GetAttribute("ScreenshotFrozen") then return end
 			local state = profiles[player]
 			if not state or state.loading or state.closing or not near(player, slot.pad.Position, 10) then return end
 			if state.bay ~= bay then
@@ -443,7 +432,14 @@ local function settleCargo(player, state)
 	end
 end
 
+if RunService:IsStudio() then
+	screenshotService = ScreenshotService.new({ world = World, profiles = profiles, weather = weather,
+		network = network, rootOf = rootOf, sync = sync, updateSlot = updateSlot, dockCargo = dockCargo,
+		settle = settleCargo, finishRaid = function(recovered) if finishRaid then finishRaid(recovered) end end })
+end
+
 Players.PlayerRemoving:Connect(function(player)
+	if screenshotService and screenshotService.player == player then screenshotService:Reset() end
 	local state = profiles[player]
 	if not state then
 		local index = table.find(waiting, player)
@@ -477,6 +473,7 @@ end)
 
 game:BindToClose(function()
 	serverClosing = true
+	if screenshotService then screenshotService:Reset() end
 	for player, state in pairs(profiles) do state.closing = true; settleCargo(player, state) end
 	local pending = 0
 	for player in pairs(profiles) do
@@ -530,6 +527,7 @@ local function stock(offer, first)
 	local label = World.billboard(anchor, rarity.name:upper() .. "   •   +" .. rate .. "/s", rarity.color, 158, 19, 4.2, 28)
 	local prompt = World.prompt(anchor, "Buy  $" .. cost, Catalog.name(cargo), Enum.KeyCode.E, .16, 10)
 	prompt.Triggered:Connect(function(player)
+		if World.root:GetAttribute("ScreenshotFrozen") then return end
 		local state = profiles[player]
 		if offer.cargo ~= cargo or not state or state.loading or state.closing or not near(player, anchor.Position, 13) then return end
 		if state.carry then message(player, "Dock your current cargo first.") return end
@@ -573,6 +571,7 @@ finishRaid = function(recovered)
 end
 
 local function startRaid()
+	if World.root:GetAttribute("ScreenshotFrozen") then return end
 	local now = workspace:GetServerTimeNow()
 	local target, highest = nil, -1
 	for _, state in pairs(profiles) do
@@ -637,6 +636,7 @@ action.OnServerEvent:Connect(function(player, request, value)
 		end
 		return
 	end
+	if World.root:GetAttribute("ScreenshotFrozen") then return end
 	local state, root = profiles[player], rootOf(player)
 	if not state or state.loading or state.closing or not root then return end
 	local now = workspace:GetServerTimeNow()
@@ -813,6 +813,7 @@ task.spawn(function()
 		local now = workspace:GetServerTimeNow()
 		for player, state in pairs(profiles) do
 			if state.loading or state.closing then continue end
+			if World.root:GetAttribute("ScreenshotFrozen") then continue end
 			SkillService.Update(player, state)
 			if state.lockedUntil > 0 and now >= state.lockedUntil then
 				state.lockedUntil = 0

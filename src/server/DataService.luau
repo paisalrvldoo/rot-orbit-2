@@ -44,6 +44,7 @@ function DataService.Decode(saved, slots)
 end
 
 function DataService.Encode(state)
+	if state.previewSaved then return table.clone(state.previewSaved) end
 	local saved = {
 		version = VERSION, cash = state.cash, bank = state.bank, level = state.level,
 		rebirths = state.rebirths, guide = state.guide, crew = state.crew,
