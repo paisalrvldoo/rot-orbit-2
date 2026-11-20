@@ -100,8 +100,9 @@ local function refreshPrompt(prompt)
 	local occupied = prompt:GetAttribute("Occupied")
 	local crew = player:GetAttribute("CrewId") or 0
 	local friendly = crew > 0 and prompt:GetAttribute("Crew") == crew
-	local usable = (kind == "Owner" and mine)
+	local usable = not player:GetAttribute("Loading") and ((kind == "Owner" and mine)
 		or (kind == "Slot" and owner ~= 0 and ((mine and not occupied and carrying) or (not mine and not friendly and occupied and not carrying)))
+	)
 	prompt.MaxActivationDistance = usable and 9 or 0
 end
 local function watchPrompt(instance)
@@ -141,7 +142,7 @@ local function render()
 	cash.Text = "$" .. number(player:GetAttribute("Cash"))
 	bank.Text = "$" .. number(player:GetAttribute("Unclaimed")) .. " banked   •   +" .. number(player:GetAttribute("Income")) .. "/s"
 	if stage == 0 then
-		guide.Text = "Waiting for a free docking bay"
+		guide.Text = player:GetAttribute("Loading") and "Loading your saved docking bay…" or "Waiting for a free docking bay"
 	elseif carried ~= "" then
 		guide.Text = "Dock " .. carried .. " at Bay " .. bay
 	elseif stage == 1 then
@@ -286,6 +287,7 @@ refreshMenu = function()
 		local level = player:GetAttribute("Upgrade") or 0
 		local rebirths = player:GetAttribute("Rebirths") or 0
 		local cost = Catalog.upgrades[level + 1]
+		line("Progress: " .. (player:GetAttribute("SaveStatus") or "Loading") .. "  •  autosave every 50s", cyan)
 		line("Dock amplifier  /  Level " .. level .. " of " .. #Catalog.upgrades, gold)
 		line("Each level adds 25% base dock income.", white)
 		if cost then
@@ -365,9 +367,13 @@ menu:GetPropertyChangedSignal("Visible"):Connect(function()
 	zap.Visible = not menu.Visible
 	menuButton.Visible = not menu.Visible
 end)
-for _, key in ipairs({ "Index", "Upgrade", "Rebirths", "Contract", "ContractProgress", "CrewId", "PersonalScore" }) do
+for _, key in ipairs({ "Index", "Upgrade", "Rebirths", "Contract", "ContractProgress", "CrewId", "PersonalScore", "SaveStatus" }) do
 	player:GetAttributeChangedSignal(key):Connect(refreshMenu)
 end
+player:GetAttributeChangedSignal("Loading"):Connect(function()
+	for prompt in pairs(prompts) do refreshPrompt(prompt) end
+	render()
+end)
 player:GetAttributeChangedSignal("CrewId"):Connect(function()
 	for prompt in pairs(prompts) do refreshPrompt(prompt) end
 end)

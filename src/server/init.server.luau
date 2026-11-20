@@ -4,6 +4,8 @@ local Orbit = ReplicatedStorage:WaitForChild("Orbit")
 local Catalog = require(Orbit:WaitForChild("Catalog"))
 local World = require(script:WaitForChild("World"))
 local CrewService = require(script:WaitForChild("CrewService"))
+local DataService = require(script:WaitForChild("DataService"))
+local data = DataService.new()
 
 local rng = Random.new()
 local bays = World.build()
@@ -13,6 +15,8 @@ local waiting = {}
 local market = {}
 local drops = {}
 local raid
+local finishRaid
+local serverClosing = false
 local action = Instance.new("RemoteEvent")
 action.Name = "Action"
 action.Parent = Orbit
@@ -49,7 +53,9 @@ local function sync(player, state)
 	player:SetAttribute("Income", rate)
 	player:SetAttribute("Carry", state.carry and Catalog.name(state.carry) or "")
 	player:SetAttribute("Bay", state.bay.number)
-	player:SetAttribute("Guide", state.guide)
+	player:SetAttribute("Guide", state.loading and 0 or state.guide)
+	player:SetAttribute("Loading", state.loading == true)
+	player:SetAttribute("SaveStatus", state.saveStatus or "Loading")
 	player:SetAttribute("LockedUntil", state.lockedUntil)
 	player:SetAttribute("Upgrade", state.level)
 	player:SetAttribute("Rebirths", state.rebirths)
@@ -112,7 +118,7 @@ local function returnCargo(cargo)
 	if source then
 		dockCargo(source, cargo)
 		local owner = source.bay.owner
-		if owner then
+		if owner and profiles[owner] then
 			sync(owner, profiles[owner])
 			message(owner, Catalog.name(cargo) .. " recovered at your bay.")
 		end
@@ -131,7 +137,7 @@ local function dropPurchased(cargo, position)
 	drops[cargo] = prompt
 	prompt.Triggered:Connect(function(player)
 		local state = profiles[player]
-		if drops[cargo] ~= prompt or not state or state.carry
+		if drops[cargo] ~= prompt or not state or state.loading or state.closing or state.carry
 			or not near(player, cargo.model.PrimaryPart.Position, 10) then return end
 		drops[cargo] = nil
 		prompt:Destroy()
@@ -156,7 +162,7 @@ local function assign(player)
 	bay.owner = player
 	local state = {
 		bay = bay, cash = 90, bank = 0, guide = 1, lockedUntil = 0, lockReady = 0, zapReady = 0,
-		level = 0, rebirths = 0, contract = 1, progress = 0, index = {}, crew = 0, score = 0,
+		level = 0, rebirths = 0, contract = 1, progress = 0, index = {}, crew = 0, score = 0, loading = true,
 	}
 	profiles[player] = state
 	crews:Refresh()
@@ -169,6 +175,34 @@ local function assign(player)
 	local root = rootOf(player)
 	if root then player.Character:PivotTo(bay.spawn) end
 	sync(player, state)
+	task.spawn(function()
+		local saved, reason = data:Load(player, state)
+		if not saved then
+			state.loading = false
+			if player.Parent then player:Kick(reason) end
+			return
+		end
+		if profiles[player] ~= state or state.closing or not player.Parent then
+			state.loading = false
+			data:Abandon(player)
+			return
+		end
+		for _, key in ipairs({ "cash", "bank", "level", "rebirths", "guide", "crew", "contract", "progress", "index" }) do state[key] = saved[key] end
+		for position, record in ipairs(saved.inventory) do
+			local cargo = { id = record.id, mutation = record.mutation }
+			cargo.model = World.figure(cargo, World.root)
+			dockCargo(bay.slots[position], cargo)
+			state.index[Catalog.discoveryKey(cargo)] = true
+		end
+		local keys = {}
+		for found in pairs(state.index) do table.insert(keys, found) end
+		table.sort(keys)
+		player:SetAttribute("Index", table.concat(keys, ","))
+		state.loading = false
+		crews:Refresh()
+		sync(player, state)
+		message(player, state.saveStatus == "Saved" and "Bay ready. Credits, cargo and discoveries saved." or "Saving unavailable. This session is playable; progress is session only.")
+	end)
 	return true
 end
 
@@ -179,7 +213,7 @@ for i, bay in ipairs(bays) do
 	collect:SetAttribute("OrbitPrompt", "Owner")
 	collect.Triggered:Connect(function(player)
 		local state = profiles[player]
-		if not state or state.bay ~= bay or not near(player, bay.bank.Position, 10) then return end
+		if not state or state.loading or state.closing or state.bay ~= bay or not near(player, bay.bank.Position, 10) then return end
 		if state.bank <= 0 then message(player, "Dock a brainrot to start earning.") return end
 		local value = state.bank
 		state.cash += value
@@ -194,7 +228,7 @@ for i, bay in ipairs(bays) do
 	lock:SetAttribute("OrbitPrompt", "Owner")
 	lock.Triggered:Connect(function(player)
 		local state = profiles[player]
-		if not state or state.bay ~= bay or not near(player, bay.lock.Position, 10) then return end
+		if not state or state.loading or state.closing or state.bay ~= bay or not near(player, bay.lock.Position, 10) then return end
 		local now = workspace:GetServerTimeNow()
 		if now < state.lockReady then
 			message(player, "Lock recharges in " .. math.ceil(state.lockReady - now) .. "s.")
@@ -215,11 +249,11 @@ for i, bay in ipairs(bays) do
 		updateSlot(slot)
 		prompt.Triggered:Connect(function(player)
 			local state = profiles[player]
-			if not state or not near(player, slot.pad.Position, 10) then return end
+			if not state or state.loading or state.closing or not near(player, slot.pad.Position, 10) then return end
 			if state.bay ~= bay then
 				local owner = bay.owner
 				local ownerState = owner and profiles[owner]
-				if not ownerState or not slot.cargo or state.carry then return end
+				if not ownerState or ownerState.loading or ownerState.closing or not slot.cargo or state.carry then return end
 				if CrewService.Same(state, ownerState) then message(player, "Squad cargo is protected.") return end
 				if workspace:GetServerTimeNow() < ownerState.lockedUntil then
 					message(player, "That bay is sealed.")
@@ -282,6 +316,22 @@ end
 
 Players.PlayerAdded:Connect(join)
 for _, player in ipairs(Players:GetPlayers()) do task.spawn(join, player) end
+local function settleCargo(player, state)
+	if raid and (raid.target.bay == state.bay or (raid.cargo and raid.cargo.source and raid.cargo.source.bay == state.bay)) then finishRaid(true) end
+	for other, otherState in pairs(profiles) do
+		local cargo = otherState.carry
+		if cargo and cargo.source and cargo.source.bay == state.bay then
+			setCarry(other, otherState, nil)
+			returnCargo(cargo)
+		end
+	end
+	if state.carry and state.carry.source then
+		local cargo = state.carry
+		setCarry(player, state, nil)
+		returnCargo(cargo)
+	end
+end
+
 Players.PlayerRemoving:Connect(function(player)
 	local state = profiles[player]
 	if not state then
@@ -289,6 +339,10 @@ Players.PlayerRemoving:Connect(function(player)
 		if index then table.remove(waiting, index) end
 		return
 	end
+	state.closing = true
+	settleCargo(player, state)
+	-- Save a settled snapshot before destroying any models or releasing the bay.
+	data:Save(player, true)
 	profiles[player] = nil
 	crews:Refresh()
 	local bay = state.bay
@@ -308,6 +362,27 @@ Players.PlayerRemoving:Connect(function(player)
 	World.title(bay, "BAY " .. bay.number .. "  /  VACANT")
 	local nextPlayer = table.remove(waiting, 1)
 	if nextPlayer then assign(nextPlayer) end
+end)
+
+game:BindToClose(function()
+	serverClosing = true
+	for player, state in pairs(profiles) do state.closing = true; settleCargo(player, state) end
+	local pending = 0
+	for player in pairs(profiles) do
+		pending += 1
+		task.spawn(function() data:Save(player, true); pending -= 1 end)
+	end
+	local deadline = os.clock() + 25
+	while pending > 0 and os.clock() < deadline do task.wait(.1) end
+end)
+
+task.spawn(function()
+	while not serverClosing do
+		task.wait(50)
+		for player, state in pairs(profiles) do
+			if not state.loading and not state.closing then task.spawn(function() data:Save(player, false) end) end
+		end
+	end
 end)
 
 local themes = { 1, 2, 1, 3, 1, 4, 2, 1, 5, 2, 3, 6 }
@@ -341,7 +416,7 @@ local function stock(offer, first)
 	local prompt = World.prompt(anchor, "Buy  $" .. cost, Catalog.name(cargo), Enum.KeyCode.E, .16, 10)
 	prompt.Triggered:Connect(function(player)
 		local state = profiles[player]
-		if offer.cargo ~= cargo or not state or not near(player, anchor.Position, 13) then return end
+		if offer.cargo ~= cargo or not state or state.loading or state.closing or not near(player, anchor.Position, 13) then return end
 		if state.carry then message(player, "Dock your current cargo first.") return end
 		if state.cash < cost then message(player, "Need $" .. cost .. " for this brainrot.") return end
 		state.cash -= cost
@@ -362,7 +437,7 @@ for i = 1, #themes do
 	stock(offer, true)
 end
 
-local function finishRaid(recovered)
+finishRaid = function(recovered)
 	local active = raid
 	raid = nil
 	active.model:Destroy()
@@ -382,7 +457,7 @@ local function startRaid()
 	local now = workspace:GetServerTimeNow()
 	local target, highest = nil, -1
 	for _, state in pairs(profiles) do
-		if now >= state.lockedUntil then
+		if not state.loading and not state.closing and now >= state.lockedUntil then
 			for _, slot in ipairs(state.bay.slots) do
 				if slot.cargo and Catalog.rate(slot.cargo) > highest then
 					target = slot
@@ -428,7 +503,7 @@ end
 
 action.OnServerEvent:Connect(function(player, request, value)
 	local state, root = profiles[player], rootOf(player)
-	if not state or not root then return end
+	if not state or state.loading or state.closing or not root then return end
 	local now = workspace:GetServerTimeNow()
 	if request ~= "Zap" then
 		if now < (state.menuReady or 0) then return end
@@ -559,6 +634,7 @@ task.spawn(function()
 		task.wait(1)
 		local now = workspace:GetServerTimeNow()
 		for player, state in pairs(profiles) do
+			if state.loading or state.closing then continue end
 			local rate = sync(player, state)
 			state.bank += rate
 			player:SetAttribute("Unclaimed", state.bank)
