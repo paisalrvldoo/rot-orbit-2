@@ -11,6 +11,7 @@ local CrewService = require(script:WaitForChild("CrewService"))
 local DataService = require(script:WaitForChild("DataService"))
 local SkillService = require(script:WaitForChild("SkillService"))
 local EconomyService = require(script:WaitForChild("EconomyService"))
+local MeteorSolarEvents = require(script:WaitForChild("MeteorSolarEvents"))
 local ScreenshotMode = require(Orbit:WaitForChild("ScreenshotMode"))
 local data = DataService.new()
 
@@ -65,7 +66,7 @@ local function near(player, position, distance)
 end
 
 local function sync(player, state)
-	local rate = EconomyService.Rate(state, workspace:GetAttribute("Event") == "Solar Flare")
+	local rate = EconomyService.Rate(state, workspace:GetAttribute("IncomeMultiplier") or 1)
 	player:SetAttribute("Cash", state.cash)
 	player:SetAttribute("Unclaimed", state.bank)
 	player:SetAttribute("Income", rate)
@@ -200,6 +201,27 @@ local function dropPurchased(cargo, position)
 		cargo.model:Destroy()
 	end)
 end
+
+local meteorMutation = 2
+local weather = MeteorSolarEvents.new({
+	world = World, profiles = profiles, random = rng, network = network,
+	rootOf = rootOf, message = message, announce = announce, activity = EconomyService.Activity,
+	refresh = function()
+		for player, state in pairs(profiles) do if not state.loading and not state.closing then sync(player, state) end end
+	end,
+	drop = function(player, state, position)
+		local cargo = state.carry
+		setCarry(player, state, nil)
+		dropPurchased(cargo, position)
+	end,
+	onShowerEnd = function()
+		local cargo = { id = rng:NextInteger(8, 21), mutation = meteorMutation }
+		meteorMutation = meteorMutation == #Catalog.mutations and 2 or meteorMutation + 1
+		cargo.model = World.figure(cargo, World.root)
+		dropPurchased(cargo, Vector3.zero)
+		announce("Shower cleared. Mutated meteor salvage is available at the reactor.")
+	end,
+})
 
 local function assign(player)
 	local bay
@@ -727,7 +749,7 @@ end)
 
 task.spawn(function()
 	local last = os.clock()
-	while true do
+	while not serverClosing do
 		task.wait(.09)
 		local now = os.clock()
 		local delta = math.min(now - last, .35)
@@ -755,7 +777,9 @@ task.spawn(function()
 			local root = state.carry and rootOf(player)
 			if root then state.carry.model:PivotTo(root.CFrame * CFrame.new(0, -.85, -2.6)) end
 		end
-		moveRaid(delta, workspace:GetServerTimeNow())
+		local serverNow = workspace:GetServerTimeNow()
+		moveRaid(delta, serverNow)
+		weather:Step(serverNow)
 	end
 end)
 
@@ -780,34 +804,6 @@ task.spawn(function()
 				message(player, "Station relief grant  /  Wallet topped up to $75.")
 			end
 		end
-	end
-end)
-
-task.spawn(function()
-	local solar = true
-	local meteorMutation = 2
-	while true do
-		task.wait(72)
-		while not next(profiles) do task.wait(5) end
-		if solar then
-			workspace:SetAttribute("Event", "Solar Flare")
-			workspace:SetAttribute("EventEndsAt", workspace:GetServerTimeNow() + 24)
-			announce("Solar flare  /  Double dock income for 24 seconds.")
-			World.flash(Vector3.new(0, 1, 0), World.gold, 15)
-		else
-			workspace:SetAttribute("Event", "Meteor Drop")
-			workspace:SetAttribute("EventEndsAt", workspace:GetServerTimeNow() + 24)
-			announce("Meteor drop  /  Recover " .. Catalog.mutations[meteorMutation].name .. " cargo at the central reactor.")
-			local cargo = { id = rng:NextInteger(8, 21), mutation = meteorMutation }
-			meteorMutation = meteorMutation == #Catalog.mutations and 2 or meteorMutation + 1
-			cargo.model = World.figure(cargo, World.root)
-			World.flash(Vector3.new(0, 2, 0), World.pink, 12)
-			dropPurchased(cargo, Vector3.new(0, 0, 0))
-		end
-		solar = not solar
-		task.wait(24)
-		workspace:SetAttribute("Event", "")
-		workspace:SetAttribute("EventEndsAt", 0)
 	end
 end)
 

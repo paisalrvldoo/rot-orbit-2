@@ -58,6 +58,9 @@ Catalog.marketThemes = { 1, 2, 1, 3, 1, 4, 2, 1, 5, 2, 3, 6 }
 Catalog.cosmicChance = .12
 Catalog.secretChance = .018
 Catalog.zap = { range = 22, cooldown = 3, stun = 1.2, stealCooldown = 6 }
+Catalog.meteor = { interval = 90, duration = 20, warning = 2.5, waveInterval = 2,
+	perWave = 2, radius = 9, damage = 25, stun = 1, shelterRadius = 9 }
+Catalog.solarFlare = { interval = 150, duration = 20, multiplier = 2 }
 
 function Catalog.rollMutation(random)
 	local chance, cumulative = random:NextNumber(), 0

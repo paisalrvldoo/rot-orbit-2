@@ -7,12 +7,12 @@ function EconomyService.Credit(state, amount)
 	return state.cash - before
 end
 
-function EconomyService.Rate(state, solar)
+function EconomyService.Rate(state, incomeMultiplier)
 	local rate = 0
 	for _, slot in ipairs(state.bay.slots) do
 		if slot.cargo then rate += Catalog.rate(slot.cargo) end
 	end
-	return math.floor(rate * (1 + .25 * state.level + .25 * state.rebirths) * (solar and 2 or 1))
+	return math.floor(rate * (1 + .25 * state.level + .25 * state.rebirths) * (incomeMultiplier or 1))
 end
 
 function EconomyService.FreeSlot(state)
