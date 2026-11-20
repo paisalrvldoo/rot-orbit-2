@@ -1,6 +1,9 @@
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
+local action = ReplicatedStorage:WaitForChild("Orbit"):WaitForChild("Action")
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "OrbitHUD"
@@ -62,6 +65,57 @@ local notice = label(gui, UDim2.new(.88, 0, 0, 32), UDim2.new(.5, 0, 0, 132), go
 notice.AnchorPoint = Vector2.new(.5, 0)
 notice.Text = ""
 notice.TextStrokeTransparency = .25
+local incident = label(gui, UDim2.fromOffset(202, 24), UDim2.new(.5, 0, 0, 167), gold, 13)
+incident.AnchorPoint = Vector2.new(.5, 0)
+local zap = panel("TextButton", gui, UDim2.fromOffset(100, 48), UDim2.new(1, -10, .63, 0), Vector2.new(1, .5))
+zap.Font = Enum.Font.GothamBold
+zap.TextSize = 16
+zap.TextColor3 = cyan
+zap.Activated:Connect(function() action:FireServer("Zap") end)
+UserInputService.InputBegan:Connect(function(input, processed)
+	if not processed and (input.KeyCode == Enum.KeyCode.Q or input.KeyCode == Enum.KeyCode.ButtonY) then
+		action:FireServer("Zap")
+	end
+end)
+
+local prompts = {}
+local function refreshPrompt(prompt)
+	local kind = prompt:GetAttribute("OrbitPrompt")
+	local owner = prompt:GetAttribute("Owner") or 0
+	local mine = owner == player.UserId
+	local carrying = (player:GetAttribute("Carry") or "") ~= ""
+	local occupied = prompt:GetAttribute("Occupied")
+	local usable = (kind == "Owner" and mine)
+		or (kind == "Slot" and owner ~= 0 and ((mine and not occupied and carrying) or (not mine and occupied and not carrying)))
+	prompt.MaxActivationDistance = usable and 9 or 0
+end
+local function watchPrompt(instance)
+	if not instance:IsA("ProximityPrompt") or not instance:GetAttribute("OrbitPrompt") then return end
+	prompts[instance] = true
+	for _, key in ipairs({ "Owner", "Occupied" }) do
+		instance:GetAttributeChangedSignal(key):Connect(function() refreshPrompt(instance) end)
+	end
+	instance.Destroying:Connect(function() prompts[instance] = nil end)
+	refreshPrompt(instance)
+end
+workspace.DescendantAdded:Connect(watchPrompt)
+for _, instance in ipairs(workspace:GetDescendants()) do watchPrompt(instance) end
+player:GetAttributeChangedSignal("Carry"):Connect(function()
+	for prompt in pairs(prompts) do refreshPrompt(prompt) end
+end)
+
+local function renderIncident()
+	incident.Text = workspace:GetAttribute("Raid") or ""
+end
+workspace:GetAttributeChangedSignal("Raid"):Connect(renderIncident)
+renderIncident()
+task.spawn(function()
+	while gui.Parent do
+		local cooldown = math.ceil((player:GetAttribute("ZapReady") or 0) - workspace:GetServerTimeNow())
+		zap.Text = cooldown > 0 and "ZAP  " .. cooldown .. "s" or (UserInputService.TouchEnabled and "ZAP" or "ZAP  [Q]")
+		task.wait(.2)
+	end
+end)
 
 local function render()
 	local bay = player:GetAttribute("Bay")

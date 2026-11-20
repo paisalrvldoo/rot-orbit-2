@@ -35,6 +35,13 @@ local function cylinder(parent, name, position, diameter, height, color, materia
 		CFrame.new(position) * CFrame.Angles(0, 0, math.pi / 2), color, material, collide, Enum.PartType.Cylinder)
 end
 
+function World.flash(position, color, size)
+	local pulse = World.part(World.root, "Pulse", Vector3.one * size, CFrame.new(position),
+		color, neon, false, Enum.PartType.Ball)
+	pulse.Transparency = .45
+	game:GetService("Debris"):AddItem(pulse, .18)
+end
+
 local function bar(parent, a, b, width, color, material, collide)
 	local distance = (b - a).Magnitude
 	return World.part(parent, "Beam", Vector3.new(width, width, distance + .04),
@@ -189,6 +196,8 @@ function World.build()
 		World.part(root, "Terminal Screen", Vector3.new(2.1, .87, .13), pivot * CFrame.new(-8.5, 2.1, -8.55), accent, neon)
 		bay.bank = bank
 		World.billboard(bank, "COLLECT", gold, 98, 21, 1.8, 24)
+		bay.lock = World.part(root, "Lock Terminal", Vector3.new(2.6, 2.5, 1.6), pivot * CFrame.new(8.5, 1.55, -7.7), dark)
+		bay.lockLabel = World.billboard(bay.lock, "BAY OPEN", cyan, 105, 20, 1.8, 24)
 		bays[i] = bay
 	end
 	for _, x in ipairs({ -43, 43 }) do
@@ -196,6 +205,9 @@ function World.build()
 		ring(root, center, Vector3.zAxis, Vector3.yAxis, 6, 26, .24, x < 0 and cyan or gold, neon)
 		ring(root, center, Vector3.zAxis, Vector3.yAxis, 6.5, 26, .14, x < 0 and gold or pink, neon)
 	end
+	World.portal = Vector3.new(43, .25, 0)
+	local gate = World.part(root, "Rift Beacon", Vector3.new(2, .35, 2), CFrame.new(World.portal), pink, neon)
+	World.billboard(gate, "GREMLIN RIFT", gold, 145, 23, 6.5, 46)
 	return bays
 end
 
@@ -247,6 +259,25 @@ function World.figure(cargo, parent)
 		ring(model, Vector3.new(0, 3.9, 0), Vector3.xAxis, Vector3.zAxis, 1.18, 10, .08, accent, neon)
 	end
 	model.Parent = parent
+	return model
+end
+
+function World.gremlin()
+	local model = Instance.new("Model")
+	model.Name = "Rift Gremlin"
+	local body = World.part(model, "Body", Vector3.new(2.4, 2.5, 2.15), CFrame.new(0, 1.5, 0),
+		Color3.fromRGB(122, 211, 70), nil, false, Enum.PartType.Ball)
+	model.PrimaryPart = body
+	body.PivotOffset = body.CFrame:ToObjectSpace(CFrame.identity)
+	for _, x in ipairs({ -.64, .64 }) do
+		World.part(model, "Ear", Vector3.new(.58, 1.32, .54), CFrame.new(x * 1.48, 2.47, 0)
+			* CFrame.Angles(0, 0, x * -.6), pink)
+		World.part(model, "Eye", Vector3.new(.41, .5, .22), CFrame.new(x, 1.95, -.94), gold, neon)
+		World.part(model, "Claw", Vector3.new(.45, .55, .8), CFrame.new(x * 2, .74, -.34), ice)
+	end
+	World.billboard(body, "RIFT GREMLIN", pink, 130, 22, 2.1, 66)
+	model:PivotTo(CFrame.new(World.portal))
+	model.Parent = World.root
 	return model
 end
 
